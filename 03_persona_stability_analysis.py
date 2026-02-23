@@ -60,7 +60,8 @@ from config import (
     CRI_WEIGHTS, DATA_FILE, OUTPUT_DIR_ROLE,
     PSI_WEIGHTS, RISK_WEIGHTS, SPECIALIST_COLS,
 )
-from utils import compute_majority_treatment, parse_embedding
+
+from utils import compare_treatments, compute_majority_treatment, parse_embedding
 
 # ---------------------------------------------------------------------------
 # Directory setup
@@ -74,6 +75,10 @@ df = pd.read_excel(DATA_FILE)
 df["majority"] = df.apply(
     lambda row: compute_majority_treatment(row, SPECIALIST_COLS), axis=1
 )
+
+from config import COLUMNS_ANSWER
+comparison_cols = COLUMNS_ANSWER[1:]
+df = compare_treatments(df, "Konferenzbeschluss", comparison_cols)
 
 ROLES = ["surgeon", "oncologist", "radio-oncologist"]
 
@@ -618,15 +623,41 @@ risk_df.to_excel(f"{OUTPUT_DIR_ROLE}/clinical_risk_score.xlsx", index=False)
 
 
 # ===========================================================================
-# 9. Summary table
+# 9. Summary table — one row per role, all key metrics
 # ===========================================================================
 
-summary = {
-    "n_patients":         len(df),
-    "mean_entropy_bits":  float(df["treatment_entropy_bits"].mean())
-                          if "treatment_entropy_bits" in df.columns else np.nan,
-}
-pd.Series(summary).to_excel(f"{OUTPUT_DIR_ROLE}/analysis_summary.xlsx")
+summary_rows = []
+
+for role in ROLES:
+    acc_col  = f"ChatGPT_single_request_5_{role}_comparison"
+    spec_col = f"ChatGPT_single_request_5_{role}_specific"
+
+    def _first(frame, col):
+        """Safely extract the first value of *col* from *frame*, or NaN."""
+        vals = frame.loc[frame["role"] == role, col].values
+        return float(vals[0]) if len(vals) else np.nan
+
+    summary_rows.append({
+        "Role":                          role.title(),
+        "N":                             len(df),
+        "Accuracy (%)":                  round(df[acc_col].mean() * 100, 1)
+                                         if acc_col in df.columns else np.nan,
+        "Specificity rate (%)":          round(df[spec_col].mean() * 100, 1)
+                                         if spec_col in df.columns else np.nan,
+        "Pitch invasion rate (%)":       round(_first(boundary_df, "pitch_invasion_rate") * 100, 1),
+        "Cosine sim (single vs SC)":     round(_first(cosine_df,   "mean_cosine_similarity"), 3),
+        "Attractor dispersion":          round(_first(pad_df,      "mean_attractor_dispersion"), 4),
+        "Role confusion entropy (bits)": round(_first(rce_df,      "mean_role_confusion_entropy"), 3),
+        "Boundary entropy (bits)":       round(_first(boundary_df, "boundary_entropy_bits"), 3),
+        "Clinical risk score":           round(_first(risk_df,     "clinical_risk_score"), 3),
+        "Persona Stability Index":       round(_first(psi_df,      "persona_stability_index"), 3),
+        "Composite Robustness Index":    round(_first(cri_df,      "composite_robustness_index"), 3),
+    })
+
+summary_df = pd.DataFrame(summary_rows).set_index("Role")
+summary_df.to_excel(f"{OUTPUT_DIR_ROLE}/analysis_summary.xlsx")
+
 print(f"\nSummary → {OUTPUT_DIR_ROLE}/analysis_summary.xlsx")
+print(summary_df.T.to_string())
 
 print("\n=== Persona Stability Analysis Complete ===")

@@ -378,7 +378,9 @@ def cochran_and_mcnemar(df: pd.DataFrame, comparison_cols: list,
               f"χ²={res['statistic']:.2f}, p={res['pvalue']:.4f}, "
               f"reject={res['reject']}")
 
-    np.fill_diagonal(matrix.values, 0.0)
+    vals = matrix.values.copy()
+    np.fill_diagonal(vals, 0.0)
+    matrix = pd.DataFrame(vals, index=matrix.index, columns=matrix.columns)
     return matrix
 
 
