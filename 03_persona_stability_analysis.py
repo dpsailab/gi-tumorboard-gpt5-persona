@@ -47,7 +47,6 @@ RISK_WEIGHTS) to facilitate sensitivity analyses.
 """
 
 import os
-from ast import literal_eval
 
 import numpy as np
 import pandas as pd
@@ -59,9 +58,10 @@ from sklearn.utils import resample
 from config import (
     CRI_WEIGHTS, DATA_FILE, OUTPUT_DIR_ROLE,
     PSI_WEIGHTS, RISK_WEIGHTS, SPECIALIST_COLS,
+    ROLE_PREFIX_MAP, ROLES, FRAMEWORK_PREFIX_MAP
 )
 
-from utils import compare_treatments, compute_majority_treatment, parse_embedding
+from utils import compare_treatments, parse_embedding
 
 # ---------------------------------------------------------------------------
 # Directory setup
@@ -71,23 +71,28 @@ os.makedirs(OUTPUT_DIR_ROLE, exist_ok=True)
 # ---------------------------------------------------------------------------
 # Load data
 # ---------------------------------------------------------------------------
-df = pd.read_excel(DATA_FILE)
-df["majority"] = df.apply(
-    lambda row: compute_majority_treatment(row, SPECIALIST_COLS), axis=1
-)
+df = pd.read_csv(DATA_FILE)
+
+print(df.columns)
 
 from config import COLUMNS_ANSWER
 comparison_cols = COLUMNS_ANSWER[1:]
-df = compare_treatments(df, "Konferenzbeschluss", comparison_cols)
 
-ROLES = ["surgeon", "oncologist", "radio-oncologist"]
+ROLES = ["Surgeon", "Oncologist", "Radio-Oncologist"]
 
 # ---------------------------------------------------------------------------
 # Single-request embedding column map
 # ---------------------------------------------------------------------------
-SINGLE_EMB = {r: f"ChatGPT_single_request_5_{r}_embeddings" for r in ROLES}
-SELF_EMB   = {r: f"ChatGPT_single_request_5_self-consistency_{r}_embeddings"
-              for r in ROLES}
+SINGLE_EMB = {
+    "Surgeon": "F3_persona_surgeon_embeddings",
+    "Oncologist": "F4_persona_medical_oncologist_embeddings",
+    "Radio-Oncologist": "F5_persona_radiation_oncologist_embeddings",
+}
+SELF_EMB   = {
+    "Surgeon": "F2_multi_expert_consensus_surgeon_embeddings",
+    "Oncologist": "F2_multi_expert_consensus_oncologist_embeddings",
+    "Radio-Oncologist": "F2_multi_expert_consensus_radio-oncologist_embeddings",
+}
 
 
 # ===========================================================================
@@ -221,45 +226,78 @@ rce_df.to_excel(f"{OUTPUT_DIR_ROLE}/role_confusion_entropy.xlsx", index=False)
 
 
 # ===========================================================================
-# 3. Role Consistency Entropy Across Patients
+# Role Consistency Entropy Across Patients (ROBUST VERSION)
 # ===========================================================================
 
-def role_consistency_entropy_across_patients(df: pd.DataFrame,
-                                              roles: list) -> pd.DataFrame:
+from scipy.stats import entropy
+
+
+def role_consistency_entropy_across_patients(
+        df: pd.DataFrame,
+        role_map: dict,
+        self_consistency_map: dict
+) -> pd.DataFrame:
     """
     Shannon entropy of per-patient accuracy distribution per role.
 
-    A uniform distribution (all patients equally likely to be correct)
-    produces maximum entropy.  A peaked distribution (model is consistently
-    right or wrong for the same patients) produces low entropy.
+    Uses explicit column mappings (robust to renaming and framework changes).
 
     Parameters
     ----------
     df :
-        Main DataFrame.
-    roles :
-        Role names (lowercase).
+        Main dataset.
+    role_map :
+        Mapping role_name -> primary treatment concordance column.
+        Example:
+            {
+                "Surgeon": "F3_persona_surgeon_treatment_concordance",
+                ...
+            }
+
+    self_consistency_map :
+        Mapping role_name -> self-consistency concordance column.
+        Example:
+            {
+                "Surgeon": "F2_multi_expert_consensus_surgeon_treatment_concordance",
+                ...
+            }
 
     Returns
     -------
     pandas.DataFrame
     """
-    rows = []
-    for role in roles:
-        single_col = f"ChatGPT_single_request_5_{role}_comparison"
-        self_col   = "ChatGPT_single_request_5_self-consistency_comparison"
 
-        if single_col not in df.columns or self_col not in df.columns:
-            print(f"  Consistency entropy: missing columns for {role}.")
+    rows = []
+
+    for role in role_map.keys():
+
+        primary_col = role_map[role]
+        self_col = self_consistency_map.get(role)
+
+        if primary_col not in df.columns or self_col not in df.columns:
+            print(f"Missing columns for {role}")
             continue
 
-        tmp = df[[single_col, self_col]].apply(pd.to_numeric, errors="coerce")
+        # Convert to numeric accuracy signals
+        tmp = df[[primary_col, self_col]].apply(pd.to_numeric, errors="coerce")
+
+        # Patient-level mean accuracy across frameworks
         patient_acc = tmp.mean(axis=1).dropna()
 
+        # Entropy computation
         if len(patient_acc) > 10:
-            hist, _ = np.histogram(patient_acc, bins=10, range=(0, 1))
-            prob = (hist + 1e-9) / (hist + 1e-9).sum()
+
+            hist, _ = np.histogram(
+                patient_acc,
+                bins=10,
+                range=(0, 1),
+                density=False
+            )
+
+            prob = (hist + 1e-9) / np.sum(hist + 1e-9)
+
             H = float(entropy(prob, base=2))
+
         else:
             H = np.nan
 
@@ -267,15 +305,10 @@ def role_consistency_entropy_across_patients(df: pd.DataFrame,
             "role": role,
             "consistency_entropy_bits": H,
             "mean_patient_accuracy": float(patient_acc.mean()),
-            "n_valid": len(patient_acc),
+            "n_valid_patients": len(patient_acc)
         })
+
     return pd.DataFrame(rows)
-
-
-cons_df = role_consistency_entropy_across_patients(df, ROLES)
-print("\n=== Role Consistency Entropy Across Patients ===")
-print(cons_df.to_string(index=False))
-cons_df.to_excel(f"{OUTPUT_DIR_ROLE}/role_consistency_entropy.xlsx", index=False)
 
 
 # ===========================================================================
@@ -330,259 +363,233 @@ cosine_df.to_excel(f"{OUTPUT_DIR_ROLE}/persona_cosine_similarity.xlsx", index=Fa
 # 5. Persona Stability Index (PSI)
 # ===========================================================================
 
-def persona_stability_index(df: pd.DataFrame, cosine_df: pd.DataFrame,
-                             roles: list, frameworks: dict) -> pd.DataFrame:
+def persona_stability_index(df: pd.DataFrame,
+                            cosine_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Compute the Persona Stability Index for each role.
+    Compute Persona Stability Index (PSI).
 
-    PSI = w1 * cosine_sim + w2 * specificity_rate
-          + w3 * (1 - pitch_invasion_rate) + w4 * accuracy
+    PSI =
+        w_cos * cosine similarity
+      + w_spec * specificity rate
+      + w_boundary * boundary control
+      + w_acc * treatment accuracy
 
-    Weights are defined in ``config.PSI_WEIGHTS``.
-
-    Parameters
-    ----------
-    df :
-        Main DataFrame.
-    cosine_df :
-        Output of ``persona_cosine_similarity``.
-    roles :
-        Role names (lowercase).
-    frameworks :
-        ``{framework_name: column_pattern}`` where ``{}`` is the role placeholder.
-
-    Returns
-    -------
-    pandas.DataFrame
+    Metrics are aggregated at ROLE LEVEL using explicit column prefixes.
     """
+
     rows = []
-    for role in roles:
-        row_cos = cosine_df[cosine_df["role"] == role]
+
+    for role_name, role_prefix in ROLE_PREFIX_MAP.items():
+
+        # ------------------------------------------
+        # Cosine similarity
+        # ------------------------------------------
+        row_cos = cosine_df[
+            cosine_df["role"].str.lower() == role_name.lower()
+        ]
+
         cos_sim = row_cos["mean_cosine_similarity"].values[0] \
-                  if not row_cos.empty else np.nan
+            if not row_cos.empty else np.nan
 
-        spec_rates, pitch_rates, acc_rates = [], [], []
-        for fw_pattern in frameworks.values():
-            base = fw_pattern.format(role)
-            for col, store in [
-                (f"{base}_specific",        spec_rates),
-                (f"{base}_pitch_invasion",  pitch_rates),
-                (f"{base}_comparison",      acc_rates),
-            ]:
-                if col in df.columns:
-                    store.append(float(df[col].mean()))
+        # ------------------------------------------
+        # Clinical metrics (IMPORTANT FIX)
+        # ------------------------------------------
+        spec_col = f"{role_prefix}_domain_content_present"
+        pitch_col = f"{role_prefix}_boundary_violation"
+        acc_col = f"{role_prefix}_treatment_concordance"
 
+        spec = df[spec_col].mean() if spec_col in df.columns else np.nan
+        pitch = df[pitch_col].mean() if pitch_col in df.columns else np.nan
+        acc = df[acc_col].mean() if acc_col in df.columns else np.nan
+
+        # ------------------------------------------
+        # PSI computation
+        # ------------------------------------------
         psi = (
-            PSI_WEIGHTS["cosine_similarity"] * (cos_sim or 0) +
-            PSI_WEIGHTS["specificity_rate"]  * (np.nanmean(spec_rates) if spec_rates else 0) +
-            PSI_WEIGHTS["pitch_control"]     * (1 - np.nanmean(pitch_rates) if pitch_rates else 0) +
-            PSI_WEIGHTS["accuracy"]          * (np.nanmean(acc_rates) if acc_rates else 0)
+            PSI_WEIGHTS["cosine_similarity"] * (cos_sim if not np.isnan(cos_sim) else 0) +
+            PSI_WEIGHTS["specificity_rate"] * (spec if not np.isnan(spec) else 0) +
+            PSI_WEIGHTS["pitch_control"] * (1 - pitch if not np.isnan(pitch) else 0) +
+            PSI_WEIGHTS["accuracy"] * (acc if not np.isnan(acc) else 0)
         )
+
         rows.append({
-            "role": role,
+            "role": role_name,
             "persona_stability_index": round(psi, 4),
             "cosine_similarity": round(cos_sim, 4) if not np.isnan(cos_sim) else np.nan,
-            "specificity_rate":  round(np.nanmean(spec_rates), 4) if spec_rates else np.nan,
-            "pitch_control":     round(1 - np.nanmean(pitch_rates), 4) if pitch_rates else np.nan,
-            "accuracy":          round(np.nanmean(acc_rates), 4) if acc_rates else np.nan,
+            "specificity_rate": round(spec, 4) if not np.isnan(spec) else np.nan,
+            "boundary_control": round(1 - pitch, 4) if not np.isnan(pitch) else np.nan,
+            "accuracy": round(acc, 4) if not np.isnan(acc) else np.nan,
         })
+
     return pd.DataFrame(rows)
 
 
-FRAMEWORKS = {
-    "single":           "ChatGPT_single_request_5_{}",
-    "self_consistency": "ChatGPT_single_request_5_self-consistency_{}",
-}
+psi_df = persona_stability_index(df, cosine_df)
 
-psi_df = persona_stability_index(df, cosine_df, ROLES, FRAMEWORKS)
-print("\n=== Persona Stability Index ===")
-print(psi_df.to_string(index=False))
 psi_df.to_excel(f"{OUTPUT_DIR_ROLE}/persona_stability_index.xlsx", index=False)
 
+print("\n=== Persona Stability Index ===")
+print(psi_df.to_string(index=False))
+
 
 # ===========================================================================
-# 6. Composite Robustness Index (CRI) with bootstrap CIs
+# 6. Composite Robustness Index
 # ===========================================================================
 
-def composite_robustness_index(df: pd.DataFrame, cosine_df: pd.DataFrame,
-                                roles: list) -> pd.DataFrame:
+def composite_robustness_index(df: pd.DataFrame,
+                               cosine_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Compute the Composite Robustness Index per role.
+    Compute the Composite Robustness Index per clinical persona role.
 
-    CRI = w_cos  * cosine_sim
-        + w_spec * specificity_rate
-        + w_pitch * (1 - pitch_invasion_rate)
-        + w_acc  * accuracy
-        + w_ent  * (1 - global_entropy)
+    CRI measures global reliability of persona behaviour across multiple signals:
 
-    Weights are defined in ``config.CRI_WEIGHTS``.
+    CRI =
+        w_cos  * identity stability (embedding cosine similarity)
+      + w_spec * clinical specificity rate
+      + w_pitch * (1 - boundary violation rate)
+      + w_acc  * treatment accuracy
+      + w_ent  * (1 - global treatment entropy)
+
+    Higher CRI indicates a more robust, clinically coherent persona behaviour.
 
     Parameters
     ----------
     df :
-        Main DataFrame.
+        Main dataset.
+
     cosine_df :
-        Output of ``persona_cosine_similarity``.
+        DataFrame containing inter-framework embedding similarity metrics.
+
     roles :
-        Role names (lowercase).
+        Role names.
 
     Returns
     -------
     pandas.DataFrame
+        Role-level robustness metrics.
     """
+
     rows = []
-    entropy_global = float(df["treatment_entropy_bits"].mean()) \
-                     if "treatment_entropy_bits" in df.columns else 0.0
 
-    for role in roles:
-        row_cos = cosine_df[cosine_df["role"] == role]
+    entropy_global = df["treatment_entropy_bits"].mean() \
+        if "treatment_entropy_bits" in df.columns else 0
+
+    for role_name, role_prefix in ROLE_PREFIX_MAP.items():
+        row_cos = cosine_df[
+            cosine_df["role"].str.lower() == role_name.lower()
+            ]
         cos_sim = row_cos["mean_cosine_similarity"].values[0] \
-                  if not row_cos.empty else np.nan
+            if not row_cos.empty else np.nan
 
-        spec_col  = f"ChatGPT_single_request_5_{role}_specific"
-        pitch_col = f"ChatGPT_single_request_5_{role}_pitch_invasion"
-        acc_col   = f"ChatGPT_single_request_5_{role}_comparison"
+        spec_col = f"{role_prefix}_domain_content_present"
+        pitch_col = f"{role_prefix}_boundary_violation"
+        acc_col = f"{role_prefix}_treatment_concordance"
 
-        spec  = float(df[spec_col].mean())  if spec_col  in df.columns else 0.0
-        pitch = float(df[pitch_col].mean()) if pitch_col in df.columns else 0.0
-        acc   = float(df[acc_col].mean())   if acc_col   in df.columns else 0.0
+        spec = df[spec_col].mean() if spec_col in df.columns else 0
+        pitch = df[pitch_col].mean() if pitch_col in df.columns else 0
+        acc = df[acc_col].mean() if acc_col in df.columns else 0
 
         cri = (
             CRI_WEIGHTS["cosine_similarity"] * (cos_sim or 0) +
-            CRI_WEIGHTS["specificity_rate"]  * spec +
-            CRI_WEIGHTS["pitch_control"]     * (1 - pitch) +
-            CRI_WEIGHTS["accuracy"]          * acc +
+            CRI_WEIGHTS["specificity_rate"] * spec +
+            CRI_WEIGHTS["pitch_control"] * (1 - pitch) +
+            CRI_WEIGHTS["accuracy"] * acc +
             CRI_WEIGHTS["entropy_stability"] * (1 - entropy_global)
         )
+
         rows.append({
-            "role": role,
+            "role": role_name,
             "composite_robustness_index": round(cri, 4),
-            "identity_stability":    round(cos_sim, 4) if not np.isnan(cos_sim) else np.nan,
-            "clinical_fidelity":     round(acc, 4),
-            "role_boundary_control": round(1 - pitch, 4),
+            "identity_stability": round(cos_sim, 4) if not np.isnan(cos_sim) else np.nan,
+            "clinical_fidelity": round(acc, 4),
+            "boundary_control": round(1 - pitch, 4),
         })
+
     return pd.DataFrame(rows)
 
 
-cri_df = composite_robustness_index(df, cosine_df, ROLES)
-print("\n=== Composite Robustness Index ===")
-print(cri_df.to_string(index=False))
+cri_df = composite_robustness_index(df, cosine_df)
+
 cri_df.to_excel(f"{OUTPUT_DIR_ROLE}/composite_robustness_index.xlsx", index=False)
 
-# Bootstrap CIs for CRI
-print("\n=== Bootstrap 95 % CIs for Composite Robustness Index ===")
-bootstrap_rows = []
-entropy_global = float(df["treatment_entropy_bits"].mean()) \
-                 if "treatment_entropy_bits" in df.columns else 0.0
-
-for role in ROLES:
-    boot_scores = []
-    for _ in range(500):
-        sample = resample(df, random_state=None)
-
-        single_emb_col = SINGLE_EMB[role]
-        self_emb_col   = SELF_EMB[role]
-
-        single_sample = sample[single_emb_col].dropna()
-        self_sample   = sample[self_emb_col].dropna()
-        if single_sample.empty or self_sample.empty:
-            continue
-
-        es = parse_embedding(single_sample.iloc[0])
-        et = parse_embedding(self_sample.iloc[0])
-        if es is None or et is None:
-            continue
-
-        cos_sim = float(cosine_similarity(es.reshape(1, -1), et.reshape(1, -1))[0][0])
-
-        spec_col  = f"ChatGPT_single_request_5_{role}_specific"
-        pitch_col = f"ChatGPT_single_request_5_{role}_pitch_invasion"
-        acc_col   = f"ChatGPT_single_request_5_{role}_comparison"
-
-        spec  = float(sample[spec_col].mean())  if spec_col  in sample.columns else 0.0
-        pitch = float(sample[pitch_col].mean()) if pitch_col in sample.columns else 0.0
-        acc   = float(sample[acc_col].mean())   if acc_col   in sample.columns else 0.0
-        ent   = float(sample["treatment_entropy_bits"].mean()) \
-                if "treatment_entropy_bits" in sample.columns else 0.0
-
-        score = (
-            CRI_WEIGHTS["cosine_similarity"] * cos_sim +
-            CRI_WEIGHTS["specificity_rate"]  * spec +
-            CRI_WEIGHTS["pitch_control"]     * (1 - pitch) +
-            CRI_WEIGHTS["accuracy"]          * acc +
-            CRI_WEIGHTS["entropy_stability"] * (1 - ent)
-        )
-        boot_scores.append(score)
-
-    if boot_scores:
-        bootstrap_rows.append({
-            "role": role,
-            "ci_2.5":  round(float(np.percentile(boot_scores, 2.5)), 4),
-            "ci_97.5": round(float(np.percentile(boot_scores, 97.5)), 4),
-            "n_bootstrap": len(boot_scores),
-        })
-
-bootstrap_df = pd.DataFrame(bootstrap_rows)
-print(bootstrap_df.to_string(index=False))
-bootstrap_df.to_excel(
-    f"{OUTPUT_DIR_ROLE}/composite_robustness_bootstrap_ci.xlsx", index=False
-)
+print("\n=== Composite Robustness Index ===")
+print(cri_df.to_string(index=False))
 
 
 # ===========================================================================
-# 7. Role Boundary Violation Entropy
+# 7. Boundary Violation Entropy
 # ===========================================================================
 
-def boundary_violation_entropy(df: pd.DataFrame, roles: list) -> pd.DataFrame:
+def boundary_violation_entropy(df: pd.DataFrame) -> pd.DataFrame:
+
     """
-    Compute the binary entropy of the pitch-invasion rate per role.
+    Compute binary Shannon entropy of boundary violation behaviour per role.
 
-    H(p) = -p*log2(p) - (1-p)*log2(1-p)
+    H(p) = -p log2(p) - (1-p) log2(1-p)
 
-    A rate of 0 or 1 produces entropy = 0 (fully predictable).
-    A rate of 0.5 produces maximum entropy = 1 bit (maximally unpredictable).
+    Interpretation:
+        - H ≈ 0 → behaviour is highly predictable (always correct or always violating)
+        - H ≈ 1 → behaviour is maximally uncertain (p ≈ 0.5)
+
+    Measures stability of role-constrained clinical reasoning.
 
     Parameters
     ----------
     df :
-        Main DataFrame.
+        Main dataset.
+
     roles :
-        Role names (lowercase).
+        Role names.
 
     Returns
     -------
     pandas.DataFrame
+        Role-level boundary violation rates and entropy in bits.
     """
+
     rows = []
-    for role in roles:
-        pitch_col = f"ChatGPT_single_request_5_{role}_pitch_invasion"
+
+    for role_name, role_prefix in ROLE_PREFIX_MAP.items():
+
+        pitch_col = f"{role_prefix}_boundary_violation"
+
         if pitch_col not in df.columns:
             continue
-        p = float(df[pitch_col].fillna(0).mean())
-        H = 0.0 if p in (0, 1) else -(p * np.log2(p) + (1 - p) * np.log2(1 - p))
+
+        p = df[pitch_col].fillna(0).mean()
+
+        if p in (0, 1):
+            H = 0
+        else:
+            H = -(p*np.log2(p) + (1-p)*np.log2(1-p))
+
         rows.append({
-            "role": role,
-            "pitch_invasion_rate": round(p, 4),
-            "boundary_entropy_bits": round(H, 4),
+            "role": role_name,
+            "boundary_violation_rate": round(p, 4),
+            "boundary_entropy_bits": round(H, 4)
         })
+
     return pd.DataFrame(rows)
 
 
-boundary_df = boundary_violation_entropy(df, ROLES)
+boundary_df = boundary_violation_entropy(df)
+
+boundary_df.to_excel(f"{OUTPUT_DIR_ROLE}/boundary_entropy.xlsx", index=False)
+
 print("\n=== Role Boundary Violation Entropy ===")
 print(boundary_df.to_string(index=False))
-boundary_df.to_excel(f"{OUTPUT_DIR_ROLE}/boundary_entropy.xlsx", index=False)
 
 
 # ===========================================================================
 # 8. Clinical Risk Penalty Score
 # ===========================================================================
 
-def clinical_risk_penalty(df: pd.DataFrame, roles: list) -> pd.DataFrame:
+def clinical_risk_penalty(df: pd.DataFrame) -> pd.DataFrame:
     """
     Compute the Clinical Risk Penalty per role.
 
-    CRP = w_pitch * pitch_invasion_rate + w_nonspec * (1 - specificity_rate)
+    CRP = w_pitch * boundary_violation_rate
+        + w_nonspec * (1 - specificity_rate)
 
     A high score indicates that the model frequently generates content outside
     its assigned role AND fails to include role-specific clinical content.
@@ -591,35 +598,46 @@ def clinical_risk_penalty(df: pd.DataFrame, roles: list) -> pd.DataFrame:
     ----------
     df :
         Main DataFrame.
-    roles :
-        Role names (lowercase).
 
     Returns
     -------
     pandas.DataFrame
     """
+
     rows = []
-    for role in roles:
-        pitch_col = f"ChatGPT_single_request_5_{role}_pitch_invasion"
-        spec_col  = f"ChatGPT_single_request_5_{role}_specific"
+
+    for role_name, role_prefix in ROLE_PREFIX_MAP.items():
+
+        pitch_col = f"{role_prefix}_boundary_violation"
+        spec_col  = f"{role_prefix}_domain_content_present"
+
         pitch = float(df[pitch_col].mean()) if pitch_col in df.columns else np.nan
         spec  = float(df[spec_col].mean())  if spec_col  in df.columns else np.nan
-        crp   = RISK_WEIGHTS["pitch_invasion"] * pitch + \
-                RISK_WEIGHTS["non_specificity"] * (1 - spec) \
-                if not (np.isnan(pitch) or np.isnan(spec)) else np.nan
+
+        crp = (
+            RISK_WEIGHTS["boundary_violation"] * pitch +
+            RISK_WEIGHTS["non_specificity"] * (1 - spec)
+        ) if not (np.isnan(pitch) or np.isnan(spec)) else np.nan
+
         rows.append({
-            "role": role,
-            "clinical_risk_score": round(crp, 4) if crp is not np.nan else np.nan,
-            "pitch_invasion_rate": round(pitch, 4),
-            "non_specificity_rate": round(1 - spec, 4),
+            "role": role_name,
+            "clinical_risk_score": round(crp, 4) if not np.isnan(crp) else np.nan,
+            "boundary_violation_rate": round(pitch, 4) if not np.isnan(pitch) else np.nan,
+            "non_specificity_rate": round(1 - spec, 4) if not np.isnan(spec) else np.nan,
         })
+
     return pd.DataFrame(rows)
 
 
-risk_df = clinical_risk_penalty(df, ROLES)
+risk_df = clinical_risk_penalty(df)
+
 print("\n=== Clinical Risk Penalty Score ===")
 print(risk_df.to_string(index=False))
-risk_df.to_excel(f"{OUTPUT_DIR_ROLE}/clinical_risk_score.xlsx", index=False)
+
+risk_df.to_excel(
+    f"{OUTPUT_DIR_ROLE}/clinical_risk_score.xlsx",
+    index=False
+)
 
 
 # ===========================================================================
@@ -628,34 +646,84 @@ risk_df.to_excel(f"{OUTPUT_DIR_ROLE}/clinical_risk_score.xlsx", index=False)
 
 summary_rows = []
 
-for role in ROLES:
-    acc_col  = f"ChatGPT_single_request_5_{role}_comparison"
-    spec_col = f"ChatGPT_single_request_5_{role}_specific"
+def _safe_first(frame, role, col):
 
-    def _first(frame, col):
-        """Safely extract the first value of *col* from *frame*, or NaN."""
-        vals = frame.loc[frame["role"] == role, col].values
-        return float(vals[0]) if len(vals) else np.nan
+    if frame is None or frame.empty:
+        return np.nan
+
+    if "role" not in frame.columns:
+        return np.nan
+
+    vals = frame.loc[
+        frame["role"].str.lower() == role.lower(),
+        col
+    ].values
+
+    return float(vals[0]) if len(vals) else np.nan
+
+for role_name, prefix in ROLE_PREFIX_MAP.items():
+
+    acc_col  = f"{prefix}_treatment_concordance"
+    spec_col = f"{prefix}_domain_content_present"
 
     summary_rows.append({
-        "Role":                          role.title(),
-        "N":                             len(df),
-        "Accuracy (%)":                  round(df[acc_col].mean() * 100, 1)
-                                         if acc_col in df.columns else np.nan,
-        "Specificity rate (%)":          round(df[spec_col].mean() * 100, 1)
-                                         if spec_col in df.columns else np.nan,
-        "Pitch invasion rate (%)":       round(_first(boundary_df, "pitch_invasion_rate") * 100, 1),
-        "Cosine sim (single vs SC)":     round(_first(cosine_df,   "mean_cosine_similarity"), 3),
-        "Attractor dispersion":          round(_first(pad_df,      "mean_attractor_dispersion"), 4),
-        "Role confusion entropy (bits)": round(_first(rce_df,      "mean_role_confusion_entropy"), 3),
-        "Boundary entropy (bits)":       round(_first(boundary_df, "boundary_entropy_bits"), 3),
-        "Clinical risk score":           round(_first(risk_df,     "clinical_risk_score"), 3),
-        "Persona Stability Index":       round(_first(psi_df,      "persona_stability_index"), 3),
-        "Composite Robustness Index":    round(_first(cri_df,      "composite_robustness_index"), 3),
+
+        "Role": role_name,
+
+        "N": len(df),
+
+        "Accuracy (%)":
+            round(df[acc_col].mean() * 100, 1)
+            if acc_col in df.columns else np.nan,
+
+        "Specificity rate (%)":
+            round(df[spec_col].mean() * 100, 1)
+            if spec_col in df.columns else np.nan,
+
+        "Pitch violation rate (%)":
+            round(
+                _safe_first(boundary_df, role_name, "boundary_violation_rate") * 100,
+                1
+            ),
+
+        "Cosine sim (single vs SC)":
+            round(
+                _safe_first(cosine_df, role_name, "mean_cosine_similarity"),
+                3
+            ),
+
+        "Boundary entropy (bits)":
+            round(
+                _safe_first(boundary_df, role_name, "boundary_entropy_bits"),
+                3
+            ),
+
+        "Clinical risk score":
+            round(
+                _safe_first(risk_df, role_name, "clinical_risk_score"),
+                3
+            ),
+
+        "Persona stability index":
+            round(
+                _safe_first(psi_df, role_name, "persona_stability_index"),
+                3
+            ),
+
+        "Composite robustness index":
+            round(
+                _safe_first(cri_df, role_name, "composite_robustness_index"),
+                3
+            ),
     })
 
+
 summary_df = pd.DataFrame(summary_rows).set_index("Role")
-summary_df.to_excel(f"{OUTPUT_DIR_ROLE}/analysis_summary.xlsx")
+
+summary_df.to_excel(
+    f"{OUTPUT_DIR_ROLE}/analysis_summary.xlsx",
+    index=True
+)
 
 print(f"\nSummary → {OUTPUT_DIR_ROLE}/analysis_summary.xlsx")
 print(summary_df.T.to_string())

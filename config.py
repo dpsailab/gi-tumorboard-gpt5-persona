@@ -11,7 +11,7 @@ Study context
 -------------
 This code accompanies a study evaluating whether assigning specialist
 role personas (Surgeon, Oncologist, Radio-Oncologist) to a large language
-model (GPT-4 / ChatGPT) improves alignment with multidisciplinary tumour
+model (GPT-5 / ChatGPT) improves alignment with multidisciplinary tumour
 board (MTB) recommendations for gastrointestinal oncology cases.
 """
 
@@ -31,7 +31,7 @@ DO_UMAP: bool = False
 # Data source
 # ---------------------------------------------------------------------------
 
-DATA_FILE: str = "Ultima_dataset with embeddings_role_treatment.xlsx"
+DATA_FILE: str = "data/LLM_MDTB_dataset_repository.csv"
 
 # ---------------------------------------------------------------------------
 # Colour palette
@@ -63,27 +63,27 @@ BAR_COLORS: list = [
 # ---------------------------------------------------------------------------
 
 SPECIALIST_COLS: list = [
-    "ChatGPT_single_request_5_surgeon_treatment",
-    "ChatGPT_single_request_5_oncologist_treatment",
-    "ChatGPT_single_request_5_radio-oncologist_treatment",
+    "F3_persona_surgeon_treatment",
+    "F4_persona_medical_oncologist_treatment",
+    "F5_persona_radiation_oncologist_treatment",
 ]
 
 # All LLM output columns to compare against the reference standard
 # (index 0 = reference; indices 1-N = comparison columns).
 COLUMNS_ANSWER: list = [
-    "Konferenzbeschluss",                               # Reference: MTB decision
-    "ChatGPT_single_request_5",                         # Baseline (no persona)
-    "ChatGPT_single_request_5_self-consistency",        # Self-consistency baseline
-    "ChatGPT_single_request_5_surgeon",                 # Surgeon persona
-    "ChatGPT_single_request_5_oncologist",              # Oncologist persona
-    "ChatGPT_single_request_5_radio-oncologist",        # Radio-Oncologist persona
-    "majority",                                         # Majority vote across roles
+    "tumorboard_treatment",                             # Reference: MTB decision                   # Reference: MTB decision (primary)
+    "F1_MDTB_simulation",                               # Baseline (no persona)
+    "F2_multi_expert_consensus",                        # Multi-expert prompt
+    "F3_persona_surgeon",                               # Surgeon persona
+    "F4_persona_medical_oncologist",                    # Oncologist persona
+    "F5_persona_radiation_oncologist",                  # Radio-Oncologist persona
+    "F6_majority_vote",                                 # Majority vote across roles
 ]
 
 # Human-readable labels corresponding to COLUMNS_ANSWER[1:] (reference excluded)
 COLUMNS_ANSWER_RENAME: list = [
     "Simulated Tumorboard",
-    "Self Consistency",
+    "Multi-Expert",
     "Surgeon",
     "Oncologist",
     "Radio-Oncologist",
@@ -98,9 +98,10 @@ RENAME_DICT: dict = dict(zip(COLUMNS_ANSWER[1:], COLUMNS_ANSWER_RENAME))
 # ---------------------------------------------------------------------------
 
 TITLE_COLUMN_RENAME: dict = {
-    "Anmeldediagnose":         "Tumour Type",
-    "EV/WV":                   "Consultation Type",
-    "Konferenzbeschluss_treatment": "Tumour Board Recommendation",
+    "tumour_type":         "Tumour Type",
+    "presentation":                   "Consultation Type",
+    "tumorboard_treatment": "Tumour Board Recommendation",
+    "tumorboard_primary_treatment": "Tumour Board Primary Recommendation",
 }
 
 # ---------------------------------------------------------------------------
@@ -115,14 +116,36 @@ VALUE_RENAME: dict = {
     "Kolon":      "Colorectal-Ca",
     "Leber":      "Hepatobiliary-Ca",
     # Consultation type
-    "EV":         "First Presentation",
-    "WV":         "FUP-Consultation",
+    "1":         "First Presentation",
+    "2":         "FUP-Consultation",
     # Treatment categories
     "lokale Therapie":  "Local Therapy",
     "Diagnostik":       "Further Diagnostics",
     "Endo-Resektion":   "Endoscopic Resection",
-    "FUP":              "Active Surveillance",
+    "Follow-up":              "Active Surveillance",
     "Systematic Therapy": "Systemic Therapy",
+}
+
+# ==========================================================
+# Role mapping (framework prefix)
+# ==========================================================
+
+ROLE_PREFIX_MAP = {
+    "Surgeon": "F3_persona_surgeon",
+    "Oncologist": "F4_persona_medical_oncologist",
+    "Radio-Oncologist": "F5_persona_radiation_oncologist",
+}
+
+ROLES = list(ROLE_PREFIX_MAP.keys())
+
+
+# ==========================================================
+# Framework mapping
+# ==========================================================
+
+FRAMEWORK_PREFIX_MAP = {
+    "single": "F1_MDTB_simulation",
+    "self_consistency": "F2_multi_expert_consensus",
 }
 
 # ---------------------------------------------------------------------------
@@ -131,32 +154,20 @@ VALUE_RENAME: dict = {
 
 # Mapping: readable role name → embedding column in the DataFrame
 EMBEDDING_COLS: dict = {
-    "Surgeon":          "ChatGPT_single_request_5_surgeon_embeddings",
-    "Oncologist":       "ChatGPT_single_request_5_oncologist_embeddings",
-    "Radio-Oncologist": "ChatGPT_single_request_5_radio-oncologist_embeddings",
-    "Simulated Tumorboard": "ChatGPT_single_request_5_embeddings",
+    "Surgeon":          "F3_persona_surgeon_embedding",
+    "Oncologist":       "F4_persona_medical_oncologist_embeddings",
+    "Radio-Oncologist": "F5_persona_radiation_oncologist_embeddings",
+    "Simulated Tumorboard": "F1_MDTB_simulation_embeddings",
 }
 
 # Self-consistency embedding columns
 SELF_CONSISTENCY_EMBEDDING_COLS: dict = {
-    "surgeon":          "ChatGPT_single_request_5_self-consistency_surgeon_embeddings",
-    "oncologist":       "ChatGPT_single_request_5_self-consistency_oncologist_embeddings",
-    "radio-oncologist": "ChatGPT_single_request_5_self-consistency_radio-oncologist_embeddings",
+    "surgeon":          "F2_multi_expert_consensus_surgeon_embeddings",
+    "oncologist":       "F2_multi_expert_consensus_oncologist_embeddings",
+    "radio-oncologist": "F2_multi_expert_consensus_radio-oncologist_embeddings",
 }
 
-# ---------------------------------------------------------------------------
-# Tumour map (English ↔ German, used for embedding plots)
-# ---------------------------------------------------------------------------
 
-TUMOR_MAP: dict = {
-    "Esophagus": "Ösophagus",
-    "Pancreas":  "Pankreas",
-    "Gastric":   "Magen",
-    "Colon":     "Kolon",
-    "Liver":     "Leber",
-}
-
-TUMOR_LIST: list = list(TUMOR_MAP.keys())
 
 # ---------------------------------------------------------------------------
 # Composite Robustness Index weights
@@ -166,7 +177,7 @@ TUMOR_LIST: list = list(TUMOR_MAP.keys())
 CRI_WEIGHTS: dict = {
     "cosine_similarity":   0.35,
     "specificity_rate":    0.25,
-    "pitch_control":       0.20,   # weight applied to (1 - pitch_invasion_rate)
+    "pitch_control":       0.20,   # weight applied to (1 - boundary_violation_rate)
     "accuracy":            0.15,
     "entropy_stability":   0.05,   # weight applied to (1 - global_entropy)
 }
@@ -175,13 +186,13 @@ CRI_WEIGHTS: dict = {
 PSI_WEIGHTS: dict = {
     "cosine_similarity": 0.40,
     "specificity_rate":  0.30,
-    "pitch_control":     0.20,   # weight applied to (1 - pitch_invasion_rate)
+    "pitch_control":     0.20,   # weight applied to (1 - boundary_violation_rate)
     "accuracy":          0.10,
 }
 
 # Clinical Risk Penalty weights
 RISK_WEIGHTS: dict = {
-    "pitch_invasion": 0.60,
+    "boundary_violation": 0.60,
     "non_specificity": 0.40,   # weight applied to (1 - specificity_rate)
 }
 
@@ -189,6 +200,6 @@ RISK_WEIGHTS: dict = {
 # Output directories
 # ---------------------------------------------------------------------------
 
-OUTPUT_DIR_ROLE:     str = "role"
-OUTPUT_DIR_ADVANCED: str = "img/advanced"
-OUTPUT_DIR_IMG_ROLE: str = "img/role"
+OUTPUT_DIR_ROLE:     str = "output"
+OUTPUT_DIR_ADVANCED: str = "output/advanced"
+OUTPUT_DIR_IMG_ROLE: str = "output/img"

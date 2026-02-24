@@ -25,25 +25,24 @@ Outputs (saved to ``role/tables/``)
 - table_consultation_by_tumour.csv
 - table_tumour_distribution.csv
 - table_treatment_by_tumour.csv
-- Table1_demographics.xlsx  ← combined, publication-ready
+- Table1_demographics.xlsx  ← combined
 
 Column mapping (dataset → analysis)
 -------------------------------------
 The anonymised dataset uses the following columns:
-  - ``Anmeldediagnose``        : tumour type (German)
-  - ``EV/WV``                  : consultation type (EV = first, WV = follow-up)
-  - ``Konferenzbeschluss_treatment`` : tumour board treatment decision
-  - ``age``                    : patient age in years (if present)
-  - ``gender`` / ``sex``       : patient sex (if present)
+  - ``tumour_type``            : tumour type
+  - ``presentation``           : consultation type (1 = first, 2 = follow-up)
+  - ``tumorboard_treatment``   : tumour board treatment decision (classified)
+  - ``age``                    : patient age in years
+  - ``gender``                 : patient gender
 
 If age or sex columns are absent the corresponding tables are skipped with
 an informative message rather than raising an error.
 """
 
 import os
-
-import numpy as np
 import pandas as pd
+import ast
 
 from config import (
     DATA_FILE,
@@ -61,9 +60,9 @@ os.makedirs(TABLE_DIR, exist_ok=True)
 # Column name aliases
 # (adjust here if your dataset uses different names)
 # ---------------------------------------------------------------------------
-COL_TUMOUR       = "Anmeldediagnose"
-COL_CONSULTATION = "EV/WV"
-COL_TREATMENT    = "Konferenzbeschluss_treatment"
+COL_TUMOUR       = "tumour_type"
+COL_CONSULTATION = "presentation"
+COL_TREATMENT    = "tumorboard_treatment"
 COL_AGE          = "age"           # set to None if not present
 COL_SEX          = "gender"        # set to None if not present; also tries "sex"
 
@@ -74,12 +73,20 @@ COL_SEX          = "gender"        # set to None if not present; also tries "sex
 
 def load_data(path: str) -> pd.DataFrame:
     """Load the main study dataset from Excel."""
-    df = pd.read_excel(path)
-
-    # Normalise tumour type and consultation labels to English
+    df = pd.read_csv(path)
+    # Normalise tumour type and consultation labels to English (if needed)
     df[COL_TUMOUR]       = df[COL_TUMOUR].replace(VALUE_RENAME)
     df[COL_CONSULTATION] = df[COL_CONSULTATION].replace(VALUE_RENAME)
     if COL_TREATMENT in df.columns:
+        # Convert string representation of lists into actual Python lists
+        df[COL_TREATMENT] = df[COL_TREATMENT].apply(
+            lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith("[") else x
+        )
+        # Extract first tumour type (primary classification)
+        df[COL_TREATMENT] = df[COL_TREATMENT].apply(
+            lambda x: x[0] if isinstance(x, list) and len(x) > 0 else x
+        )
+        # Apply English label mapping (if needed)
         df[COL_TREATMENT] = df[COL_TREATMENT].replace(VALUE_RENAME)
 
     return df
@@ -346,7 +353,6 @@ def build_table1(df: pd.DataFrame, sex_col: str = None) -> pd.DataFrame:
 
 def main() -> None:
     df = load_data(DATA_FILE)
-
     # Detect sex column (tries "gender" then "sex")
     sex_col = None
     for candidate in [COL_SEX, "sex"]:

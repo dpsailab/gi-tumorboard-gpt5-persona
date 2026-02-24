@@ -150,7 +150,7 @@ def compare_treatments(df: pd.DataFrame, reference_col: str,
         ``{col}_treatment`` for each ``col`` in *comparison_cols*.
     reference_col :
         Base name of the reference standard column (e.g.
-        ``"Konferenzbeschluss"``).
+        ``"tumorboard_treatment"``).
     comparison_cols :
         List of model base-name columns to evaluate.
 
@@ -202,7 +202,7 @@ def calculate_correct_counts(df: pd.DataFrame, comparison_cols: list) -> dict:
     dict
         ``{column_name: int}``
     """
-    return {col: int(df[f"{col}_comparison"].sum()) for col in comparison_cols}
+    return {col: int(df[f"{col}_treatment_concordance"].sum()) for col in comparison_cols}
 
 
 def calculate_correct_percentages(df: pd.DataFrame, comparison_cols: list,
@@ -213,7 +213,7 @@ def calculate_correct_percentages(df: pd.DataFrame, comparison_cols: list,
     Parameters
     ----------
     df :
-        DataFrame containing ``{col}_comparison`` columns.
+        DataFrame containing ``{col}_treatment_concordance`` columns.
     comparison_cols :
         List of model base-name columns.
     rename_dict :
@@ -224,7 +224,7 @@ def calculate_correct_percentages(df: pd.DataFrame, comparison_cols: list,
     dict
         ``{column_name_or_label: float}``
     """
-    percentages = {col: df[f"{col}_comparison"].mean() * 100
+    percentages = {col: df[f"{col}_treatment_concordance"].mean() * 100
                    for col in comparison_cols}
     if rename_dict:
         percentages = {rename_dict.get(k, k): v for k, v in percentages.items()}
@@ -243,7 +243,7 @@ def wilson_ci(df: pd.DataFrame, comparison_cols: list,
     Parameters
     ----------
     df :
-        DataFrame with ``{col}_comparison`` binary columns.
+        DataFrame with ``{col}_treatment_concordance`` binary columns.
     comparison_cols :
         Model base-name columns to evaluate.
     rename_dict :
@@ -259,7 +259,7 @@ def wilson_ci(df: pd.DataFrame, comparison_cols: list,
     rows = []
     n = len(df)
     for col in comparison_cols:
-        correct = int(df[f"{col}_comparison"].sum())
+        correct = int(df[f"{col}_treatment_concordance"].sum())
         p = correct / n if n > 0 else 0.0
         ci_low, ci_high = proportion_confint(count=correct, nobs=n,
                                              alpha=alpha, method="wilson")
@@ -316,7 +316,7 @@ def run_cochran_q(df: pd.DataFrame, comparison_cols: list,
     df :
         DataFrame with binary (0/1) columns listed in *comparison_cols*.
     comparison_cols :
-        Exactly the comparison columns (``{col}_comparison``) to test.
+        Exactly the comparison columns (``{col}_treatment_concordance``) to test.
     alpha :
         Significance threshold.
 
@@ -350,7 +350,7 @@ def cochran_and_mcnemar(df: pd.DataFrame, comparison_cols: list,
     df :
         DataFrame with binary (0/1) comparison columns.
     comparison_cols :
-        Exactly the ``{col}_comparison`` columns to test.
+        Exactly the ``{col}_treatment_concordance`` columns to test.
     alpha :
         Significance threshold.
     return_statistic :
@@ -420,3 +420,53 @@ def proportions_ztest_holm(percentages: dict, total: int = 100) -> pd.DataFrame:
         "holm_adjusted_p": pvals_adj,
         "reject": reject,
     })
+
+def parse_treatment_list_column(df: pd.DataFrame,
+                                column: str,
+                                primary_output_col: Optional[str] = None) -> pd.DataFrame:
+    """
+    Parse treatment columns stored as serialized lists and optionally
+    derive a primary-treatment column (first element).
+
+    Parameters
+    ----------
+    df :
+        Input dataframe.
+    column :
+        Column containing treatments stored as list-like strings or lists.
+    primary_output_col :
+        Name of derived column containing the primary treatment.
+        If None → no primary column is created.
+
+    Returns
+    -------
+    pd.DataFrame
+        Modified dataframe (copy).
+    """
+
+    def parse_list(x):
+        if isinstance(x, list):
+            return x
+
+        if isinstance(x, str):
+            try:
+                parsed = ast.literal_eval(x)
+                if isinstance(parsed, list):
+                    return parsed
+            except:
+                return [x]
+
+        return []
+
+    df = df.copy()
+
+    # Parse list column
+    df[column] = df[column].apply(parse_list)
+
+    # Primary treatment
+    if primary_output_col:
+        df[primary_output_col] = df[column].apply(
+            lambda x: x[0] if isinstance(x, list) and len(x) > 0 else np.nan
+        )
+
+    return df

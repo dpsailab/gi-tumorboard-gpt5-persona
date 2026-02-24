@@ -211,5 +211,4 @@ __marimo__/
 *.docx
 *.png
 *.csv
-role/
-img/
+output/

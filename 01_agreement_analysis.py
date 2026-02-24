@@ -6,7 +6,7 @@ Agreement analysis: LLM role persona vs. multidisciplinary tumour board.
 This module evaluates the treatment-recommendation accuracy of three specialist
 role personas (Surgeon, Oncologist, Radio-Oncologist) and a majority-vote
 aggregation scheme against the reference standard defined by the institutional
-multidisciplinary tumour board (MTB) record (``Konferenzbeschluss``).
+multidisciplinary tumour board (MTB) record (``tumorboard_treatment``).
 
 Outputs (saved to ``role/`` and ``img/role/``):
   - Overall and stratified agreement rates (Excel)
@@ -23,12 +23,13 @@ Statistical tests performed:
 
 import os
 from collections import Counter
-
+import ast
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 from docx import Document
+from scipy.stats import entropy
 
 from config import (
     BAR_COLORS,
@@ -46,10 +47,9 @@ from utils import (
     calculate_correct_counts,
     calculate_correct_percentages,
     cochran_and_mcnemar,
-    compare_treatments,
-    compute_majority_treatment,
     proportions_ztest_holm,
     wilson_ci,
+    parse_treatment_list_column
 )
 
 # ---------------------------------------------------------------------------
@@ -61,19 +61,20 @@ os.makedirs(OUTPUT_DIR_IMG_ROLE, exist_ok=True)
 # ---------------------------------------------------------------------------
 # Load data
 # ---------------------------------------------------------------------------
-df = pd.read_excel(DATA_FILE)
+df = pd.read_csv(DATA_FILE)
 
-# Derive majority vote across the three specialist role columns
-df["majority"] = df.apply(
-    lambda row: compute_majority_treatment(row, SPECIALIST_COLS), axis=1
+# ----------------------------------------------------------
+# Ensure tumorboard_treatment is parsed as list
+# and derive primary treatment (first element)
+# ----------------------------------------------------------
+df = parse_treatment_list_column(
+    df,
+    column="tumorboard_treatment",
+    primary_output_col="tumorboard_primary_treatment"
 )
-df["majority_treatment"] = df["majority"]
 
 # Columns to compare against the reference (excluding the reference itself)
 comparison_cols = COLUMNS_ANSWER[1:]
-
-# Run pairwise treatment comparisons; appends ``{col}_comparison`` columns
-df = compare_treatments(df, "Konferenzbeschluss", comparison_cols)
 
 # ---------------------------------------------------------------------------
 # Overall agreement rates
@@ -90,7 +91,7 @@ ci_table.to_excel(f"{OUTPUT_DIR_ROLE}/overall_agreement_ci.xlsx", index=False)
 # ---------------------------------------------------------------------------
 # Statistical tests
 # ---------------------------------------------------------------------------
-comp_binary_cols = [f"{c}_comparison" for c in comparison_cols]
+comp_binary_cols = [f"{c}_treatment_concordance" for c in comparison_cols]
 
 mcnemar_matrix = cochran_and_mcnemar(df, comp_binary_cols)
 mcnemar_matrix.to_excel(f"{OUTPUT_DIR_ROLE}/mcnemar_matrix.xlsx")
@@ -105,12 +106,12 @@ print(holm_results.to_string(index=False))
 # ---------------------------------------------------------------------------
 print("\n=== 95 % CI per Tumour Type (Wilson method) ===")
 ci_by_tumor_rows = []
-for tumor in df["Anmeldediagnose"].unique():
-    sub = df[df["Anmeldediagnose"] == tumor]
+for tumor in df["tumour_type"].unique():
+    sub = df[df["tumour_type"] == tumor]
     n   = len(sub)
     label = VALUE_RENAME.get(tumor, tumor)
     for col in comparison_cols:
-        correct = int(sub[f"{col}_comparison"].sum())
+        correct = int(sub[f"{col}_treatment_concordance"].sum())
         p = correct / n if n > 0 else 0.0
         from statsmodels.stats.proportion import proportion_confint
         ci_low, ci_high = proportion_confint(correct, n, alpha=0.05, method="wilson")
@@ -139,7 +140,7 @@ def _save_or_show(path: str) -> None:
     plt.close()
 
 
-def plot_comparison_heatmap(df: pd.DataFrame, comparison_cols: list,
+def plot_concordance_heatmap(df: pd.DataFrame, comparison_cols: list,
                             save_dir: str) -> None:
     """
     Binary heatmap: green = correct, red = incorrect, per patient × model.
@@ -147,14 +148,14 @@ def plot_comparison_heatmap(df: pd.DataFrame, comparison_cols: list,
     Parameters
     ----------
     df :
-        DataFrame with ``{col}_comparison`` columns.
+        DataFrame with ``{col}_treatment_concordance`` columns.
     comparison_cols :
         Model base-name columns.
     save_dir :
         Directory to write the PNG file.
     """
     matrix = pd.DataFrame(
-        {col: df[f"{col}_comparison"].values for col in comparison_cols}
+        {col: df[f"{col}_treatment_concordance"].values for col in comparison_cols}
     )
     matrix.index = range(1, len(matrix) + 1)
 
@@ -230,7 +231,7 @@ def plot_sub_analysis(df: pd.DataFrame, column_name: str,
     df :
         DataFrame with comparison columns already computed.
     column_name :
-        Stratification variable (e.g. ``"Anmeldediagnose"``, ``"EV/WV"``).
+        Stratification variable (e.g. ``"tumour_type"``, ``"presentation"``).
     comparison_cols :
         Model base-name columns.
     rename_dict :
@@ -249,15 +250,14 @@ def plot_sub_analysis(df: pd.DataFrame, column_name: str,
                  f"{label} (N = {len(sub)})")
         plot_overall_bar(perc, rename_dict, title, save_dir)
 
-
 # ---------------------------------------------------------------------------
 # Run visualisations
 # ---------------------------------------------------------------------------
-plot_comparison_heatmap(df, comparison_cols, OUTPUT_DIR_IMG_ROLE)
+plot_concordance_heatmap(df, comparison_cols, OUTPUT_DIR_IMG_ROLE)
 plot_overall_bar(percentages, RENAME_DICT, "Overall Agreement Rates", OUTPUT_DIR_IMG_ROLE)
-plot_sub_analysis(df, "Anmeldediagnose",           comparison_cols, RENAME_DICT, OUTPUT_DIR_IMG_ROLE)
-plot_sub_analysis(df, "EV/WV",                     comparison_cols, RENAME_DICT, OUTPUT_DIR_IMG_ROLE)
-plot_sub_analysis(df, "Konferenzbeschluss_treatment", comparison_cols, RENAME_DICT, OUTPUT_DIR_IMG_ROLE)
+plot_sub_analysis(df, "tumour_type",           comparison_cols, RENAME_DICT, OUTPUT_DIR_IMG_ROLE)
+plot_sub_analysis(df, "presentation",                     comparison_cols, RENAME_DICT, OUTPUT_DIR_IMG_ROLE)
+plot_sub_analysis(df, "tumorboard_primary_treatment", comparison_cols, RENAME_DICT, OUTPUT_DIR_IMG_ROLE)
 
 
 # ===========================================================================
@@ -372,13 +372,13 @@ def create_treatment_summary_table(df: pd.DataFrame, diagnosis_col: str,
     return table
 
 
-create_stacked_bar_treatment(df, "Anmeldediagnose", "EV/WV",
-                              "Konferenzbeschluss_treatment", OUTPUT_DIR_IMG_ROLE)
+create_stacked_bar_treatment(df, "tumour_type", "presentation",
+                              "tumorboard_primary_treatment", OUTPUT_DIR_IMG_ROLE)
 create_treatment_summary_table(
     df,
-    diagnosis_col="Anmeldediagnose",
-    evwv_col="EV/WV",
-    treatment_col="Konferenzbeschluss_treatment",
+    diagnosis_col="tumour_type",
+    evwv_col="presentation",
+    treatment_col="tumorboard_primary_treatment",
     save_path=f"{OUTPUT_DIR_ROLE}/treatment_summary_by_diagnosis.xlsx",
 )
 
@@ -396,9 +396,9 @@ def build_role_treatment_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """
     records = []
     role_map = {
-        "ChatGPT_single_request_5_surgeon_treatment":          "Surgeon",
-        "ChatGPT_single_request_5_oncologist_treatment":       "Oncologist",
-        "ChatGPT_single_request_5_radio-oncologist_treatment": "Radio-Oncologist",
+        "F3_persona_surgeon_treatment":                  "Surgeon",
+        "F4_persona_medical_oncologist_treatment":       "Oncologist",
+        "F5_persona_radiation_oncologist_treatment":     "Radio-Oncologist",
     }
     for col, label in role_map.items():
         if col in df.columns:
@@ -455,6 +455,28 @@ role_treatment_stats["Percentage"] = (
 )
 plot_role_treatment_distribution(role_treatment_stats, OUTPUT_DIR_IMG_ROLE)
 
+print('=== Role Treatment Statistics ===')
+print(role_treatment_stats)
+role_treatment_stats.to_excel(f"{OUTPUT_DIR_ROLE}/role_treatment_percentages.xlsx", index=False)
+
+
+role_treatment_cols = [
+    "F3_persona_surgeon_treatment",
+    "F4_persona_medical_oncologist_treatment",
+    "F5_persona_radiation_oncologist_treatment",
+]
+
+def shannon_entropy_row(row):
+    vals = [row[c] for c in role_treatment_cols if pd.notna(row[c])]
+    if not vals: return np.nan
+    counts = pd.Series(vals).value_counts(normalize=True)
+    return float(entropy(counts, base=2))
+
+df['treatment_entropy_bits'] = df.apply(shannon_entropy_row, axis=1)
+print(df['treatment_entropy_bits'].describe())
+print(df.groupby('tumour_type')['treatment_entropy_bits'].mean())
+
+
 
 # ===========================================================================
 # Word document tables
@@ -495,9 +517,9 @@ def _add_table_to_doc(doc: Document, df: pd.DataFrame,
 
 
 doc = Document()
-_add_table_to_doc(doc, df, "Anmeldediagnose",           comparison_cols, RENAME_DICT)
-_add_table_to_doc(doc, df, "EV/WV",                     comparison_cols, RENAME_DICT)
-_add_table_to_doc(doc, df, "Konferenzbeschluss_treatment", comparison_cols, RENAME_DICT)
+_add_table_to_doc(doc, df, "tumour_type",           comparison_cols, RENAME_DICT)
+_add_table_to_doc(doc, df, "presentation",                     comparison_cols, RENAME_DICT)
+_add_table_to_doc(doc, df, "tumorboard_primary_treatment", comparison_cols, RENAME_DICT)
 doc.save(f"{OUTPUT_DIR_ROLE}/Analysis_Tables_role.docx")
 print(f"Word tables saved → {OUTPUT_DIR_ROLE}/Analysis_Tables_role.docx")
 
