@@ -4,6 +4,9 @@ pandas>=2.0
 scipy>=1.10
 statsmodels>=0.14
 
+# LLM API
+openai==1.109.1
+
 # Machine learning
 scikit-learn>=1.3
 

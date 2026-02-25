@@ -138,6 +138,12 @@ ROLE_PREFIX_MAP = {
 
 ROLES = list(ROLE_PREFIX_MAP.keys())
 
+METHOD_TREATMENT_COLS = {
+    "Simulated Tumorboard": "F1_MDTB_simulation_treatment",
+    "Surgeon": "F3_persona_surgeon_treatment",
+    "Oncologist": "F4_persona_medical_oncologist_treatment",
+    "Radio-Oncologist": "F5_persona_radiation_oncologist_treatment",
+}
 
 # ==========================================================
 # Framework mapping
@@ -147,6 +153,25 @@ FRAMEWORK_PREFIX_MAP = {
     "single": "F1_MDTB_simulation",
     "self_consistency": "F2_multi_expert_consensus",
 }
+
+# Explicit mapping: (framework_label, role_label, spec_col, pitch_col)
+SIGNAL_COLUMNS = [
+    # F3 - surgeon persona
+    ("F3_persona_surgeon", "Surgeon",
+     "F3_persona_surgeon_domain_content_present",
+     "F3_persona_surgeon_boundary_violation",
+     "F3_persona_surgeon_treatment_concordance"),
+    # F4 - oncologist persona
+    ("F4_persona_medical_oncologist", "Oncologist",
+     "F4_persona_medical_oncologist_domain_content_present",
+     "F4_persona_medical_oncologist_boundary_violation",
+     "F4_persona_medical_oncologist_treatment_concordance"),
+    # F5 - radio-oncologist persona
+    ("F5_persona_radiation_oncologist", "Radio-Oncologist",
+     "F5_persona_radiation_oncologist_domain_content_present",
+     "F5_persona_radiation_oncologist_boundary_violation",
+     "F5_persona_radiation_oncologist_treatment_concordance"),
+]
 
 # ---------------------------------------------------------------------------
 # Embedding column definitions

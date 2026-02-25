@@ -37,7 +37,7 @@ computed and saved for inclusion in the supplementary materials:
   7. **Role Consistency Entropy Across Patients**
      Per-patient accuracy distribution entropy per role.
 
-All outputs are written to ``role/``.
+All outputs are written to ``output/``.
 
 Weight rationale
 ----------------
@@ -53,7 +53,6 @@ import pandas as pd
 from scipy.special import softmax
 from scipy.stats import bootstrap, entropy
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.utils import resample
 
 from config import (
     CRI_WEIGHTS, DATA_FILE, OUTPUT_DIR_ROLE,
@@ -73,7 +72,6 @@ os.makedirs(OUTPUT_DIR_ROLE, exist_ok=True)
 # ---------------------------------------------------------------------------
 df = pd.read_csv(DATA_FILE)
 
-print(df.columns)
 
 from config import COLUMNS_ANSWER
 comparison_cols = COLUMNS_ANSWER[1:]
