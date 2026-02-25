@@ -22,7 +22,7 @@ This folder contains three core scripts:
 
 ---
 
-# 1️⃣ `openai_client.py`
+# 1️ `openai_client.py`
 
 ### Purpose
 Provides a minimal wrapper around the OpenAI Chat Completions API.
@@ -52,7 +52,7 @@ or load it securely from environment variables.
 
 ---
 
-# 2️⃣ prompt_templates.py
+# 2 prompt_templates.py
 
 This module defines the five experimental frameworks used in the GPT-5 tumor board study.
 
@@ -74,21 +74,17 @@ The model acts as a complete multidisciplinary tumor board and must produce a cl
 
 Characteristics:
 
-No external retrieval
-
-No multi-step reasoning output
-
-Output: concise German recommendation
+- No external retrieval
+- No multi-step reasoning output
+- Output: concise German recommendation
 
 ### Framework 2 – Multi-Expert Deliberation (Self-Consistency)
 
 The model generates three independent reasoning paths:
 
-Surgeon
-
-Medical Oncologist
-
-Radiation Oncologist
+- Surgeon
+- Medical Oncologist
+- Radiation Oncologist
 
 It then synthesizes a final tumor board consensus.
 
@@ -107,23 +103,14 @@ This framework explicitly enforces internal deliberation before consensus genera
 
 ### Frameworks 3–5 – Single Specialist Role Prompts
 
-The model assumes the perspective of one specialty only:
+The model assumes the perspective of ONE specialty only:
 
-Surgical oncologist
+- Surgical oncologist
+- Medical oncologist
+- Radiation oncologist
 
-Medical oncologist
-
-Radiation oncologist
-
-The model must:
-
-Make a clear treatment decision
-
-Not suggest further tumor board discussion
-
-Answer in German (1–2 sentences)
-
-Explain its reasoning briefly
+Characteristics:
+- as Framework 1
 
 ---
 
@@ -144,7 +131,7 @@ In the execution script, these are concatenated into a single message before bei
 
 ---
 
-# 3️⃣ run_framework_experiment.py
+# 3️ run_framework_experiment.py
 
 This script executes a selected framework on a dummy patient case.
 
