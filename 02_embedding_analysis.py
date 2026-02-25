@@ -1,204 +1,354 @@
 """
 02_embedding_analysis.py
 ========================
-Embedding-space analysis of specialist role personas.
 
-Quantifies whether assigning different clinical specialist role personas to an
-LLM produces meaningfully distinct response embeddings.  Analyses include:
+Embedding-space analysis (Single Request vs Self-Consistency Personas).
 
-  1. Mean pairwise cosine similarity matrix across roles.
-  2. PCA of concatenated role embeddings, coloured by tumour type.
-  3. (Optional) UMAP dimensionality reduction with KDE density overlays.
-  4. Jensen–Shannon divergence between role embedding distributions.
-  5. Inter-role centroid separation matrix.
-  6. Persona Drift Score: cosine distance between single-request and
-     self-consistency embeddings, per role and per case.
-  7. Kruskal–Wallis test for embedding-mean separation across roles.
+This pipeline evaluates whether different clinical persona prompting
+strategies produce systematically distinct embedding representations.
 
-All results are written to ``output/`` (Excel) and ``output/advanced/`` (PNG).
+Analyses include:
 
-Requirements
+1. Pairwise cosine similarity between persona roles.
+2. PCA structural analysis of embedding manifolds:
+   - Global role centroids
+   - Within-role dispersion
+   - Tumour-specific centroid separation
+3. Jensen–Shannon divergence between role embedding distributions.
+4. Centroid separation matrices in latent space.
+5. Statistical robustness testing using:
+   - Kruskal–Wallis tests on PCA projections.
+   - Effect size estimation via variance decomposition.
+6. Persona drift quantification between:
+   - Single-request persona responses
+   - Self-consistency persona responses
+
+Outputs are stored in:
+``output/embedding_analysis/``
+
+Requirements:
 ------------
-  - ``umap-learn``  (only if ``DO_UMAP = True`` in config.py)
-  - ``scikit-learn >= 1.0``
+- scikit-learn >= 1.0
+- scipy >= 1.7
+- pandas >= 1.3
 """
 
 import os
-
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy.spatial.distance import cdist, jensenshannon
-from scipy.stats import entropy, f_oneway, kruskal
-from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans
 
+from scipy.spatial.distance import cdist, jensenshannon
+from scipy.stats import kruskal
+from sklearn.decomposition import PCA
 
 from config import (
-    DATA_FILE, DO_UMAP, OUTPUT_DIR_ADVANCED, OUTPUT_DIR_ROLE,
-    ROLE_COLORS, SHOW_PLOTS, SPECIALIST_COLS
+    DATA_FILE,
+    OUTPUT_DIR_ROLE,
+    SHOW_PLOTS,
+    SINGLE_REQUEST_EMBEDDING_COLS,
+    SELF_CONSISTENCY_EMBEDDING_COLS,
+    ROLE_CONFIG
 )
+
 from utils import parse_embedding, safe_cosine
 
-# ---------------------------------------------------------------------------
-# Directory setup
-# ---------------------------------------------------------------------------
-os.makedirs(OUTPUT_DIR_ROLE, exist_ok=True)
-os.makedirs(OUTPUT_DIR_ADVANCED, exist_ok=True)
+# ------------------------------------------------------
+# Setup
+# ------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Load data
-# ---------------------------------------------------------------------------
+TABLE_DIR = os.path.join(OUTPUT_DIR_ROLE, "embedding_analysis")
+IMG_DIR = os.path.join(OUTPUT_DIR_ROLE, "embedding_analysis/img")
+
+os.makedirs(TABLE_DIR, exist_ok=True)
+os.makedirs(IMG_DIR, exist_ok=True)
+
 df = pd.read_csv(DATA_FILE)
 
+role_colors = {
+    role: ROLE_CONFIG[role]["color"]
+    for role in ROLE_CONFIG
+}
 
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
+# ------------------------------------------------------
+# Helpers
+# ------------------------------------------------------
 
-def _save_or_show(path: str) -> None:
+def _save_or_show(path):
     plt.savefig(path, dpi=300, bbox_inches="tight")
-    print(f"Figure saved → {path}")
+    print(f"Saved → {path}")
     if SHOW_PLOTS:
         plt.show()
     plt.close()
 
 
-# ===========================================================================
-# 1. Mean pairwise cosine similarity matrix
-# ===========================================================================
+def plot_persona_pca_space(
+        df,
+        embedding_map: dict,
+        title: str,
+        output_path: str,
+        include_tumorboard: bool = False
+):
 
-role_names       = [c.replace("_treatment", "") for c in SPECIALIST_COLS]
-embedding_cols   = [f"{r}_embeddings" for r in role_names]
-extra_col        = "F1_MDTB_simulation_embeddings"
-if extra_col not in embedding_cols:
-    embedding_cols.append(extra_col)
+    print(f"\n=== PCA {title} ===")
 
-labels = [c.replace("_embeddings", "") for c in embedding_cols]
+    tumor_list = df["tumour_type"].dropna().unique()
 
-print("\n=== Computing pairwise cosine similarity matrix ===")
-sim_matrix = pd.DataFrame(np.nan, index=labels, columns=labels)
+    vectors, roles, tumors = [], [], []
 
-for i, col1 in enumerate(embedding_cols):
-    for j, col2 in enumerate(embedding_cols):
-        if col1 not in df.columns or col2 not in df.columns:
-            continue
-        sims = []
-        for raw1, raw2 in zip(df[col1], df[col2]):
-            s = safe_cosine(parse_embedding(raw1), parse_embedding(raw2))
-            if s is not None:
-                sims.append(s)
-        sim_matrix.loc[labels[i], labels[j]] = np.mean(sims) if sims else np.nan
+    # -----------------------------
+    # Build dataset
+    # -----------------------------
 
-sim_matrix.to_excel(f"{OUTPUT_DIR_ROLE}/similarity_matrix_roles.xlsx")
-print(sim_matrix.round(4))
+    for idx, row in df.iterrows():
 
-# Pretty-label the matrix for the heatmap
-pretty_map = {
-    "F1_MDTB_simulation":                  "Simulated Tumorboard",
-    "F3_persona_surgeon":                  "Surgeon",
-    "F4_persona_medical_oncologist":       "Oncologist",
-    "F5_persona_radiation_oncologist":     "Radio-Oncologist",
-}
-sim_display = sim_matrix.rename(index=pretty_map, columns=pretty_map)
+        tumor_val = str(row["tumour_type"])
 
-plt.figure(figsize=(8, 6))
-sns.heatmap(sim_display.astype(float), annot=True, fmt=".3f",
-            cmap="viridis", vmin=0.85, vmax=1.0)
-plt.title("Mean Pairwise Cosine Similarity — Role Embeddings")
-plt.xlabel("Role")
-plt.ylabel("Role")
-_save_or_show(f"{OUTPUT_DIR_ROLE}/embedding_similarity_heatmap.png")
+        for role, col in embedding_map.items():
+            # Optionally skip tumorboard if not needed
+            if not include_tumorboard and role == "Simulated Tumorboard":
+                continue
 
+            emb = parse_embedding(row.get(col))
 
-# ===========================================================================
-# 2. PCA of concatenated role embeddings
-# ===========================================================================
+            if emb is None:
+                continue
 
-role_emb_colnames = [c.replace("_treatment", "") + "_embeddings" for c in SPECIALIST_COLS]
+            vectors.append(emb)
+            roles.append(role)
+            tumors.append(tumor_val)
 
-print("\n=== Running PCA on concatenated role embeddings ===")
-combined_vectors, valid_idx = [], []
+    if len(vectors) < 20:
+        print("Not enough samples for PCA")
+        return
 
-for idx, row in df.iterrows():
-    parts, ok = [], True
-    for emb_col in role_emb_colnames:
-        v = parse_embedding(row.get(emb_col))
-        if v is None:
-            ok = False
-            break
-        parts.append(v)
-    if ok:
-        combined_vectors.append(np.concatenate(parts))
-        valid_idx.append(idx)
+    vectors = np.array(vectors)
+    roles = np.array(roles)
+    tumors = np.array(tumors)
 
-if len(combined_vectors) >= 5:
-    X   = np.vstack(combined_vectors)
+    # -----------------------------
+    # PCA
+    # -----------------------------
+
     pca = PCA(n_components=2, random_state=42)
-    X2  = pca.fit_transform(X)
+    X2 = pca.fit_transform(vectors)
 
-    k  = min(5, max(2, int(len(X2) ** 0.5)))
-    km = KMeans(n_clusters=k, random_state=42, n_init=10).fit(X2)
-
-    plt.figure(figsize=(10, 6))
-    sns.scatterplot(
-        x=X2[:, 0], y=X2[:, 1],
-        hue=[df.loc[i, "tumour_type"] for i in valid_idx],
-        style=km.labels_,
-        palette="tab10",
-        alpha=0.75,
+    print(
+        f"PCA variance explained: "
+        f"PC1={pca.explained_variance_ratio_[0]*100:.1f}% "
+        f"PC2={pca.explained_variance_ratio_[1]*100:.1f}%"
     )
-    plt.title("PCA — Concatenated Role Embeddings (coloured by tumour type)")
-    plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]*100:.1f} %)")
-    plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]*100:.1f} %)")
-    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-    plt.tight_layout()
-    _save_or_show(f"{OUTPUT_DIR_ADVANCED}/pca_concat_role_embeddings.png")
 
-    # ------------------------------------------------------------------
-    # PCA: per-role and per-tumour centroid / dispersion statistics
-    # ------------------------------------------------------------------
-    # Build a flat record set: one row per embedding (role × case)
-    # so we can compute role centroids and per-tumour separation in 2-D.
-    # Note: these embeddings are NOT concatenated — we use individual role
-    # columns to keep role identity intact for centroid computation.
+    # -----------------------------
+    # Plot
+    # -----------------------------
 
-    fw_cols = {
-        "Tumorboard":      "ChatGPT_single_request_5_embeddings",
-        "Surgeon":         "ChatGPT_single_request_5_surgeon_embeddings",
-        "Oncologist":      "ChatGPT_single_request_5_oncologist_embeddings",
-        "Radio-oncologist":"ChatGPT_single_request_5_radio-oncologist_embeddings",
-    }
+    fig = plt.figure(figsize=(18,12))
+    gs = plt.GridSpec(2,3, figure=fig, wspace=0.35, hspace=0.35)
+
+    ax0 = fig.add_subplot(gs[0,0])
+
+    # Overall plot
+    for role, color in role_colors.items():
+        mask = roles == role
+
+        if mask.sum() == 0:
+            continue
+
+        ax0.scatter(
+            X2[mask,0],
+            X2[mask,1],
+            alpha=0.6,
+            s=35,
+            color=color,
+            label=role
+        )
+
+        if mask.sum() > 15:
+            sns.kdeplot(
+                x=X2[mask,0],
+                y=X2[mask,1],
+                fill=True,
+                levels=[0.25,1],
+                alpha=0.25,
+                color=color,
+                ax=ax0
+            )
+
+    ax0.set_title(f"Overall Persona Space")
+    ax0.grid()
+
+    # -----------------------------
+    # Tumor panels
+    # -----------------------------
+
+    pos_map = [(0,1),(0,2),(1,0),(1,1),(1,2)]
+
+    for i, tumor in enumerate(tumor_list):
+
+        if i >= len(pos_map):
+            break
+
+        ax = fig.add_subplot(gs[pos_map[i]])
+
+        tumor_mask_global = tumors == tumor
+
+        for role, color in role_colors.items():
+
+            final_mask = (roles == role) & tumor_mask_global
+
+            if final_mask.sum() < 5:
+                continue
+
+            ax.scatter(
+                X2[final_mask,0],
+                X2[final_mask,1],
+                s=35,
+                alpha=0.6,
+                color=color
+            )
+
+            if final_mask.sum() > 15:
+                sns.kdeplot(
+                    x=X2[final_mask,0],
+                    y=X2[final_mask,1],
+                    fill=True,
+                    levels=[0.25, 1],
+                    alpha=0.25,
+                    color=color,
+                    ax=ax
+                )
+
+
+
+        ax.set_title(tumor)
+        ax.grid()
+
+    handles, labels = ax0.get_legend_handles_labels()
+
+    fig.legend(
+        handles,
+        labels,
+        loc="upper right",
+        bbox_to_anchor=(0.98,0.98)
+    )
+
+    plt.suptitle(title, fontsize=16)
+
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    print(f"----> saved {output_path}")
+
+    plt.close()
+
+# ======================================================
+# Generic Embedding Analysis Pipeline
+# ======================================================
+
+def run_embedding_analysis(df, embedding_dict, title_prefix, save_prefix):
+
+    print(f"\n=== {title_prefix} Embedding Analysis ===")
+
+    roles = list(embedding_dict.keys())
+    emb_cols = list(embedding_dict.values())
+
+    # ==================================================
+    # 1. Pairwise cosine similarity matrix
+    # ==================================================
+
+    print("\n--- Pairwise cosine similarity ---")
+
+    sim_matrix = pd.DataFrame(np.nan, index=roles, columns=roles)
+
+    for i, r1 in enumerate(roles):
+        for j, r2 in enumerate(roles):
+
+            col1 = embedding_dict[r1]
+            col2 = embedding_dict[r2]
+
+            if col1 not in df.columns or col2 not in df.columns:
+                continue
+
+            sims = []
+
+            for a, b in zip(df[col1], df[col2]):
+                s = safe_cosine(parse_embedding(a), parse_embedding(b))
+                if s is not None:
+                    sims.append(s)
+
+            if sims:
+                sim_matrix.loc[r1, r2] = np.mean(sims)
+
+    print(sim_matrix.round(4))
+
+    sim_matrix.to_excel(
+        f"{TABLE_DIR}/{save_prefix}_similarity_matrix.xlsx"
+    )
+
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(sim_matrix.astype(float), annot=True, fmt=".3f",
+                cmap="viridis", vmin=0.85, vmax=1.0)
+    plt.title(f"Mean Pairwise Cosine Similarity — {save_prefix} Role Embeddings")
+    plt.xlabel("Role")
+    plt.ylabel("Role")
+    _save_or_show(f"{IMG_DIR}/{save_prefix}embedding_similarity_heatmap.png")
+
+    # ==================================================
+    # 2. Advanced PCA structural analysis (per-role)
+    # ==================================================
+
+    print("\n--- Advanced PCA structural analysis ---")
 
     records = []
-    for idx, row in df.iterrows():
-        for role, col in fw_cols.items():
-            v = parse_embedding(row.get(col))
-            if v is not None:
+
+    # --------------------------------------------------
+    # Build flat record set (role × case)
+    # --------------------------------------------------
+
+    for _, row in df.iterrows():
+
+        tumor_val = str(row["tumour_type"])
+
+        for role in roles:
+
+            emb = parse_embedding(row.get(embedding_dict[role]))
+
+            if emb is not None:
                 records.append({
-                    "role":  role,
-                    "tumor": str(row["tumour_type"]),
-                    "embedding": v,
+                    "role": role,
+                    "tumor": tumor_val,
+                    "embedding": emb
                 })
 
-    if len(records) >= 20:
-        rec_df   = pd.DataFrame(records)
+    if len(records) < 20:
+        print("Not enough samples for PCA — skipping.")
+    else:
+
+        rec_df = pd.DataFrame(records)
+
         all_vecs = np.vstack(rec_df["embedding"].values)
 
-        pca_role          = PCA(n_components=2, random_state=42)
-        coords            = pca_role.fit_transform(all_vecs)
-        rec_df["PC1"]     = coords[:, 0]
-        rec_df["PC2"]     = coords[:, 1]
+        # --------------------------------------------------
+        # PCA projection
+        # --------------------------------------------------
 
-        ev = pca_role.explained_variance_ratio_
-        print(f"\nPCA explained variance: PC1={ev[0]*100:.1f}%, PC2={ev[1]*100:.1f}%")
+        pca = PCA(n_components=2, random_state=42)
+        coords = pca.fit_transform(all_vecs)
 
-        # ---- Global role centroids and pairwise distances ----
-        from scipy.spatial.distance import pdist, squareform
+        rec_df["PC1"] = coords[:, 0]
+        rec_df["PC2"] = coords[:, 1]
 
-        centroids  = rec_df.groupby("role")[["PC1", "PC2"]].mean()
+        ev = pca.explained_variance_ratio_
+        print(f"PCA explained variance: PC1={ev[0] * 100:.1f}%, PC2={ev[1] * 100:.1f}%")
+
+        # --------------------------------------------------
+        # Global role centroids
+        # --------------------------------------------------
+
+        centroids = rec_df.groupby("role")[["PC1", "PC2"]].mean()
         dispersion = rec_df.groupby("role")[["PC1", "PC2"]].std()
+
+        from scipy.spatial.distance import pdist, squareform
 
         sep_matrix = pd.DataFrame(
             squareform(pdist(centroids.values)),
@@ -206,292 +356,347 @@ if len(combined_vectors) >= 5:
             columns=centroids.index,
         )
 
-        print("\n=== PCA Role Centroids (PC1, PC2) ===")
+        print("\n=== PCA Global Role Centroids ===")
         print(centroids.round(4))
+
         print("\n=== PCA Pairwise Centroid Distances ===")
         print(sep_matrix.round(4))
-        print("\n=== PCA Within-Role Dispersion (SD along PC1, PC2) ===")
+
+        print("\n=== PCA Within-Role Dispersion (SD PC1, PC2) ===")
         print(dispersion.round(4))
 
-        # ---- Per-tumour centroid distances ----
+        # Save global stats
+        centroids.to_excel(
+            f"{TABLE_DIR}/{save_prefix}_pca_global_role_centroids.xlsx"
+        )
+        sep_matrix.to_excel(
+            f"{TABLE_DIR}/{save_prefix}_pca_global_centroid_separation.xlsx"
+        )
+        dispersion.to_excel(
+            f"{TABLE_DIR}/{save_prefix}_pca_global_role_dispersion.xlsx"
+        )
+
+        # --------------------------------------------------
+        # Per-tumour centroid distances
+        # --------------------------------------------------
+
         tumor_stats_rows = []
-        for tumor_de in df["tumour_type"].unique():
-            sub = rec_df[rec_df["tumor"] == tumor_de]
+
+        for tumor_val in rec_df["tumor"].unique():
+
+            sub = rec_df[rec_df["tumor"] == tumor_val]
+
             if len(sub) < 8:
                 continue
+
             sub_centroids = sub.groupby("role")[["PC1", "PC2"]].mean()
-            sub_disp      = sub.groupby("role")[["PC1", "PC2"]].std()
-            sub_sep       = pd.DataFrame(
+            sub_disp = sub.groupby("role")[["PC1", "PC2"]].std()
+
+            sub_sep = pd.DataFrame(
                 squareform(pdist(sub_centroids.values)),
                 index=sub_centroids.index,
                 columns=sub_centroids.index,
             )
-            # Distance from each role centroid to the Tumorboard centroid
-            if "Tumorboard" in sub_centroids.index:
-                tb = sub_centroids.loc["Tumorboard"].values
+
+            print(f"\n--- {tumor_val} ---")
+            print("Centroids:")
+            print(sub_centroids.round(4))
+            print("Separation:")
+            print(sub_sep.round(4))
+            print("Dispersion:")
+            print(sub_disp.round(4))
+
+            # Optional: distance to Tumorboard if present
+            if "Simulated Tumorboard" in sub_centroids.index:
+
+                tb = sub_centroids.loc["Simulated Tumorboard"].values
+
                 for role in sub_centroids.index:
-                    if role == "Tumorboard":
+
+                    if role == "Simulated Tumorboard":
                         continue
-                    d = float(np.linalg.norm(sub_centroids.loc[role].values - tb))
+
+                    d = float(
+                        np.linalg.norm(
+                            sub_centroids.loc[role].values - tb
+                        )
+                    )
+
                     tumor_stats_rows.append({
-                        "tumour":        tumor_de,
-                        "role":          role,
-                        "dist_to_TB":    round(d, 4),
-                        "disp_PC1":      round(float(sub_disp.loc[role, "PC1"]), 4)
-                                         if role in sub_disp.index else np.nan,
-                        "disp_PC2":      round(float(sub_disp.loc[role, "PC2"]), 4)
-                                         if role in sub_disp.index else np.nan,
+                        "tumour": tumor_val,
+                        "role": role,
+                        "dist_to_TB": round(d, 4),
+                        "disp_PC1": round(float(sub_disp.loc[role, "PC1"]), 4)
+                        if role in sub_disp.index else np.nan,
+                        "disp_PC2": round(float(sub_disp.loc[role, "PC2"]), 4)
+                        if role in sub_disp.index else np.nan,
                     })
 
-            print(f"\n  --- {tumor_de} ---")
-            print(f"  Centroids:\n{sub_centroids.round(4)}")
-            print(f"  Separation:\n{sub_sep.round(4)}")
-            print(f"  Dispersion:\n{sub_disp.round(4)}")
-
         tumor_pca_df = pd.DataFrame(tumor_stats_rows)
+
         tumor_pca_df.to_excel(
-            f"{OUTPUT_DIR_ADVANCED}/pca_per_tumour_centroid_distances.xlsx",
-            index=False,
+            f"{TABLE_DIR}/{save_prefix}_pca_per_tumour_centroid_distances.xlsx",
+            index=False
         )
+
         print(f"\nPer-tumour PCA stats saved → "
-              f"{OUTPUT_DIR_ADVANCED}/pca_per_tumour_centroid_distances.xlsx")
+              f"{TABLE_DIR}/{save_prefix}_pca_per_tumour_centroid_distances.xlsx")
 
-        # Save global stats
-        centroids.to_excel(f"{OUTPUT_DIR_ADVANCED}/pca_global_role_centroids.xlsx")
-        sep_matrix.to_excel(f"{OUTPUT_DIR_ADVANCED}/pca_global_centroid_separation.xlsx")
-        dispersion.to_excel(f"{OUTPUT_DIR_ADVANCED}/pca_global_role_dispersion.xlsx")
+    # =================================================
+    # 2 bis. PCA PLOT
+    # =================================================
 
-else:
-    print("Insufficient complete rows for PCA — skipping.")
+    plot_persona_pca_space(
+        df=df,
+        embedding_map=embedding_dict,
+        title=f"{save_prefix} — PCA Persona Space",
+        output_path=f"{IMG_DIR}/pca_{save_prefix}_persona_space.png",
+        include_tumorboard=True
+    )
 
+    # ==================================================
+    # 3. Jensen-Shannon divergence
+    # ==================================================
 
-# ===========================================================================
-# 3. UMAP (optional, controlled by DO_UMAP flag)
-# ===========================================================================
+    print("\n--- Jensen-Shannon divergence ---")
 
-if DO_UMAP:
-    try:
-        from umap import UMAP
-    except ImportError:
-        print("umap-learn not installed; skipping UMAP.  Install with: pip install umap-learn")
-        DO_UMAP = False
+    role_vectors = {r: [] for r in roles}
 
-if DO_UMAP:
-    print("\n=== Running UMAP persona landscape ===")
+    for _, row in df.iterrows():
+        for r in roles:
+            v = parse_embedding(row.get(embedding_dict[r]))
+            if v is not None:
+                role_vectors[r].append(v)
 
-    framework_sets = {
-        "Single_request": {
-            "Tumorboard":      "ChatGPT_single_request_5_embeddings",
-            "Surgeon":         "ChatGPT_single_request_5_surgeon_embeddings",
-            "Oncologist":      "ChatGPT_single_request_5_oncologist_embeddings",
-            "Radio-oncologist":"ChatGPT_single_request_5_radio-oncologist_embeddings",
-        },
-        "Self_consistency": {
-            "Tumorboard":      "ChatGPT_single_request_5_self-consistency_tumorboard_embeddings",
-            "Surgeon":         "ChatGPT_single_request_5_self-consistency_surgeon_embeddings",
-            "Oncologist":      "ChatGPT_single_request_5_self-consistency_oncologist_embeddings",
-            "Radio-oncologist":"ChatGPT_single_request_5_self-consistency_radio-oncologist_embeddings",
-        },
+    for r in role_vectors:
+        if len(role_vectors[r]) > 0:
+            role_vectors[r] = np.array(role_vectors[r])
+
+    js_rows = []
+
+    for i in range(len(roles)):
+        for j in range(i+1, len(roles)):
+
+            r1, r2 = roles[i], roles[j]
+
+            try:
+                h1 = np.histogram(
+                    role_vectors[r1].flatten(),
+                    bins=50,
+                    density=True
+                )[0] + 1e-9
+
+                h2 = np.histogram(
+                    role_vectors[r2].flatten(),
+                    bins=50,
+                    density=True
+                )[0] + 1e-9
+
+                d = jensenshannon(h1, h2)
+
+            except:
+                d = np.nan
+
+            js_rows.append({
+                "role_A": r1,
+                "role_B": r2,
+                "jsd": d
+            })
+
+    pd.DataFrame(js_rows).to_excel(
+        f"{TABLE_DIR}/{save_prefix}_jsd.xlsx",
+        index=False
+    )
+
+    # ==================================================
+    # 4. Centroid separation
+    # ==================================================
+
+    print("\n--- Centroid separation ---")
+
+    centroids = {
+        r: np.mean(role_vectors[r], axis=0)
+        for r in roles
+        if len(role_vectors[r]) >= 5
     }
 
-    tumor_map_de = {en: de for en, de in TUMOR_MAP.items()}
-    tumor_list_en = TUMOR_LIST
+    if len(centroids) > 1:
+        sep_matrix = pd.DataFrame(
+            cdist(list(centroids.values()), list(centroids.values())),
+            index=centroids.keys(),
+            columns=centroids.keys()
+        )
 
-    for fw_name, fw_cols in framework_sets.items():
-        records = []
-        for idx, row in df.iterrows():
-            for role, col in fw_cols.items():
-                emb = parse_embedding(row.get(col))
+        print(sep_matrix.round(4))
+
+        sep_matrix.to_excel(
+            f"{TABLE_DIR}/{save_prefix}_centroid_separation.xlsx"
+        )
+
+    # ==================================================
+    # 5. Statistical robustness analysis (Reviewer-proof)
+    # ==================================================
+
+    print("\n=== Statistical robustness tests ===")
+
+
+    # --------------------------------------------------
+    # Convert embeddings → PCA scalar projections
+    # --------------------------------------------------
+
+    print("\n--- PCA-based statistical separation ---")
+
+    pca_scores = {r: [] for r in roles}
+
+    # Project embeddings onto PCA space for scalar testing
+    all_vectors = []
+
+    for _, row in df.iterrows():
+
+        for r in roles:
+            emb = parse_embedding(row.get(embedding_dict[r]))
+
+            if emb is not None:
+                all_vectors.append(emb)
+
+    if len(all_vectors) > 50:
+
+        pca_global = PCA(n_components=2, random_state=42)
+
+        X_all = pca_global.fit_transform(np.vstack(all_vectors))
+
+        print(
+            f"PCA variance explained: "
+            f"PC1={pca_global.explained_variance_ratio_[0] * 100:.1f}% "
+            f"PC2={pca_global.explained_variance_ratio_[1] * 100:.1f}%"
+        )
+
+        # Rebuild labeled dataset
+        rows = []
+
+        for _, row in df.iterrows():
+
+            for r in roles:
+
+                emb = parse_embedding(row.get(embedding_dict[r]))
+
                 if emb is not None:
-                    records.append({"idx": idx, "role": role,
-                                    "tumor": str(row["tumour_type"]),
-                                    "embedding": emb})
-        if len(records) < 50:
-            print(f"{fw_name}: too few samples for UMAP — skipping.")
-            continue
+                    rows.append({
+                        "role": r,
+                        "pc1": pca_global.transform([emb])[0][0],
+                        "pc2": pca_global.transform([emb])[0][1]
+                    })
 
-        master = pd.DataFrame(records)
-        vectors   = np.vstack(master["embedding"].values)
-        roles_arr = master["role"].values
-        tumor_arr = master["tumor"].values
+        stat_df = pd.DataFrame(rows)
 
-        umap_model = UMAP(n_components=2, n_neighbors=30,
-                          min_dist=0.1, random_state=42)
-        X2 = umap_model.fit_transform(vectors)
+        # --------------------------------------------------
+        # Kruskal-Wallis on PC1 and PC2
+        # --------------------------------------------------
 
-        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-        axes = axes.flatten()
+        print("\n--- Kruskal-Wallis separation tests ---")
 
-        ax0 = axes[0]
-        for role, color in ROLE_COLORS.items():
-            mask = roles_arr == role
-            if not mask.any():
-                continue
-            ax0.scatter(X2[mask, 0], X2[mask, 1], s=35, alpha=0.6,
-                        color=color, label=role)
-            if mask.sum() > 15:
-                try:
-                    sns.kdeplot(x=X2[mask, 0], y=X2[mask, 1], fill=True,
-                                alpha=0.2, levels=[0.25, 1], color=color, ax=ax0)
-                except Exception:
-                    pass
-        ax0.set_title(f"{fw_name} — Global Persona Space")
-        ax0.grid(alpha=0.3)
+        for pc in ["pc1", "pc2"]:
 
-        for pos_i, tumor_en in enumerate(tumor_list_en, start=1):
-            if pos_i >= len(axes):
-                break
-            ax = axes[pos_i]
-            tumor_de = tumor_map_de.get(tumor_en, tumor_en)
-            t_mask = np.char.find(
-                np.char.lower(tumor_arr.astype(str)), tumor_de.lower()
-            ) >= 0
-            plotted = False
-            for role, color in ROLE_COLORS.items():
-                final_mask = (roles_arr == role) & t_mask
-                if final_mask.sum() < 5:
+            groups = [
+                stat_df[stat_df["role"] == r][pc].values
+                for r in roles
+                if len(stat_df[stat_df["role"] == r]) > 5
+            ]
+
+            if len(groups) >= 2:
+
+                H, p = kruskal(*groups)
+
+                print(f"{pc.upper()} → H={H:.4f}, p={p:.6f}")
+
+            else:
+                print(f"{pc.upper()} → insufficient samples")
+
+        # --------------------------------------------------
+        # Effect size (η² approximation)
+        # --------------------------------------------------
+
+        print("\n--- Effect size estimation ---")
+
+        grand_mean = stat_df[["pc1", "pc2"]].mean()
+
+        ss_between = 0
+        ss_total = 0
+
+        for pc in ["pc1", "pc2"]:
+
+            overall_mean = stat_df[pc].mean()
+
+            ss_total = np.sum((stat_df[pc] - overall_mean) ** 2)
+
+            for r in roles:
+
+                grp = stat_df[stat_df["role"] == r][pc]
+
+                if len(grp) < 5:
                     continue
-                plotted = True
-                ax.scatter(X2[final_mask, 0], X2[final_mask, 1],
-                           s=40, alpha=0.7, color=color)
-                if final_mask.sum() > 15:
-                    try:
-                        sns.kdeplot(x=X2[final_mask, 0], y=X2[final_mask, 1],
-                                    fill=True, alpha=0.25, levels=[0.25, 1],
-                                    color=color, ax=ax)
-                    except Exception:
-                        pass
-            if plotted:
-                ax.set_title(tumor_en)
-                ax.grid(alpha=0.3)
 
-        handles = [plt.scatter([], [], color=c, label=r)
-                   for r, c in ROLE_COLORS.items()]
-        fig.legend(handles=handles, loc="upper right",
-                   bbox_to_anchor=(0.98, 0.98))
-        plt.suptitle(f"{fw_name} — UMAP Clinical Persona Landscape", fontsize=16)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-        _save_or_show(f"{OUTPUT_DIR_ADVANCED}/umap_{fw_name}.png")
+                ss_between += len(grp) * (grp.mean() - overall_mean) ** 2
 
-    print("UMAP complete.")
+            eta_sq = ss_between / ss_total if ss_total > 0 else np.nan
+
+            print(f"{pc} η² = {eta_sq:.4f}")
+
+        # --------------------------------------------------
+        # Save statistical PCA dataframe
+        # --------------------------------------------------
+
+        stat_df.to_excel(
+            f"{TABLE_DIR}/{save_prefix}_pca_statistical_projection.xlsx",
+            index=False
+        )
+
+        print(f"Saved → {TABLE_DIR}/{save_prefix}_pca_statistical_projection.xlsx")
+
+    else:
+        print("Not enough data for statistical PCA testing")
 
 
-# ===========================================================================
-# 4. Jensen–Shannon divergence between role distributions
-# ===========================================================================
+# ======================================================
+# Run pipeline
+# ======================================================
 
-print("\n=== Jensen–Shannon divergence between role embedding distributions ===")
+run_embedding_analysis(
+    df,
+    SINGLE_REQUEST_EMBEDDING_COLS,
+    "Single Request",
+    "single_request"
+)
 
-# Explicit role → embedding column mapping (MOST ROBUST APPROACH)
-role_embedding_map = {
-    "Surgeon":          "F3_persona_surgeon_embeddings",
-    "Oncologist":       "F4_persona_medical_oncologist_embeddings",
-    "Radio-Oncologist": "F5_persona_radiation_oncologist_embeddings",
-}
-
-role_vectors = {role: [] for role in role_embedding_map}
-
-# Collect embeddings
-for _, row in df.iterrows():
-    for role, col in role_embedding_map.items():
-        v = parse_embedding(row.get(col))
-        if v is not None:
-            role_vectors[role].append(v)
-
-# Convert to numpy arrays
-for role in role_vectors:
-    if role_vectors[role]:
-        role_vectors[role] = np.array(role_vectors[role])
-
-roles_list = [r for r in role_vectors if isinstance(role_vectors[r], np.ndarray)]
-
-# Compute JSD pairwise
-js_rows = []
-
-for i in range(len(roles_list)):
-    for j in range(i + 1, len(roles_list)):
-        r1, r2 = roles_list[i], roles_list[j]
-
-        try:
-            hist1 = np.histogram(
-                role_vectors[r1].flatten(),
-                bins=50,
-                density=True
-            )[0] + 1e-9
-
-            hist2 = np.histogram(
-                role_vectors[r2].flatten(),
-                bins=50,
-                density=True
-            )[0] + 1e-9
-
-            d = jensenshannon(hist1, hist2)
-
-        except Exception:
-            d = np.nan
-
-        js_rows.append({
-            "role_A": r1,
-            "role_B": r2,
-            "jensen_shannon_divergence": d
-        })
-
-        print(f"  {r1} vs {r2}: JSD = {d:.4f}")
-
-js_df = pd.DataFrame(js_rows)
-
-js_df.to_excel(
-    f"{OUTPUT_DIR_ROLE}/role_distribution_divergence.xlsx",
-    index=False
+run_embedding_analysis(
+    df,
+    SELF_CONSISTENCY_EMBEDDING_COLS,
+    "Self Consistency",
+    "self_consistency"
 )
 
 
-# ===========================================================================
-# 5. Inter-role centroid separation
-# ===========================================================================
-
-print("\n=== Inter-role centroid separation ===")
-
-role_centroids = {r: np.mean(role_vectors[r], axis=0)
-                  for r in roles_list if len(role_vectors[r]) >= 5}
-
-centroid_sep = pd.DataFrame(
-    cdist(list(role_centroids.values()), list(role_centroids.values())),
-    index=role_centroids.keys(),
-    columns=role_centroids.keys(),
-)
-print(centroid_sep.round(4))
-centroid_sep.to_excel(f"{OUTPUT_DIR_ROLE}/role_centroid_separation.xlsx")
-
-
-# ===========================================================================
-# 6. Persona Drift Score (single-request vs self-consistency)
-# ===========================================================================
+# ======================================================
+# PERSONA DRIFT SCORE (Single Request vs Self-Consistency)
+# ======================================================
 
 print("\n=== Persona Drift Score ===")
 
-# Explicit mappings (ROBUST APPROACH)
-single_request_map = {
-    "Surgeon": "F3_persona_surgeon_embeddings",
-    "Oncologist": "F4_persona_medical_oncologist_embeddings",
-    "Radio-Oncologist": "F5_persona_radiation_oncologist_embeddings",
-}
-
-selfconsistency_map = {
-    "Surgeon": "F2_multi_expert_consensus_surgeon_embeddings",
-    "Oncologist": "F2_multi_expert_consensus_oncologist_embeddings",
-    "Radio-Oncologist": "F2_multi_expert_consensus_radio-oncologist_embeddings",
-}
-
 case_rows = []
 
-for role in single_request_map.keys():
+# ------------------------------------------------------
+# Case-level drift
+# ------------------------------------------------------
 
-    single_col = single_request_map[role]
-    self_col   = selfconsistency_map[role]
+for role in SINGLE_REQUEST_EMBEDDING_COLS.keys():
+
+    single_col = SINGLE_REQUEST_EMBEDDING_COLS.get(role)
+    self_col   = SELF_CONSISTENCY_EMBEDDING_COLS.get(role)
+
+    if single_col is None or self_col is None:
+        continue
 
     if single_col not in df.columns or self_col not in df.columns:
-        print(f"Missing embedding columns for {role}")
         continue
 
     for idx, row in df.iterrows():
@@ -511,133 +716,91 @@ for role in single_request_map.keys():
 
 drift_df = pd.DataFrame(case_rows)
 
-
-# ---------------------------------------------------------------------------
+# ------------------------------------------------------
 # Drift summary per role
-# ---------------------------------------------------------------------------
+# ------------------------------------------------------
 
-role_drift_summary = (
-    drift_df.groupby("role")["cosine_drift"]
-    .agg(["mean", "std", "count"])
-    .reset_index()
-    .rename(columns={
-        "mean": "mean_drift",
-        "std": "std_drift",
-        "count": "n"
-    })
-)
+if len(drift_df) > 0:
 
-print(role_drift_summary.to_string(index=False))
-
-
-# ---------------------------------------------------------------------------
-# Drift by tumour type
-# ---------------------------------------------------------------------------
-
-role_tumor_drift = (
-    drift_df.groupby(["role", "tumor"])["cosine_drift"]
-    .agg(["mean", "std", "count"])
-    .reset_index()
-)
-
-
-# ---------------------------------------------------------------------------
-# Kruskal-Wallis test across roles
-# ---------------------------------------------------------------------------
-
-groups = [
-    drift_df[drift_df["role"] == r]["cosine_drift"].values
-    for r in drift_df["role"].unique()
-    if len(drift_df[drift_df["role"] == r]) > 5
-]
-
-if len(groups) >= 2:
-    stat, pval = kruskal(*groups)
-    print(f"\nKruskal–Wallis across roles: H = {stat:.4f}, p = {pval:.6f}")
-
-
-# ---------------------------------------------------------------------------
-# Centroid-level drift
-# ---------------------------------------------------------------------------
-
-print("\nCentroid-level drift:")
-
-centroid_drift_rows = []
-
-for role in single_request_map.keys():
-
-    single_col = single_request_map[role]
-    self_col   = selfconsistency_map[role]
-
-    sv, tv = [], []
-
-    for _, row in df.iterrows():
-
-        s = parse_embedding(row.get(single_col))
-        t = parse_embedding(row.get(self_col))
-
-        if s is not None and t is not None:
-            sv.append(s)
-            tv.append(t)
-
-    if len(sv) > 0:
-
-        centroid_drift_rows.append({
-            "role": role,
-            "centroid_cosine_drift": safe_cosine(
-                np.mean(np.vstack(sv), axis=0),
-                np.mean(np.vstack(tv), axis=0),
-            ),
-            "n_cases": len(sv),
+    role_drift_summary = (
+        drift_df.groupby("role")["cosine_drift"]
+        .agg(["mean", "std", "count"])
+        .reset_index()
+        .rename(columns={
+            "mean": "mean_drift",
+            "std": "std_drift",
+            "count": "n"
         })
+    )
 
-centroid_drift_df = pd.DataFrame(centroid_drift_rows)
+    print("\n--- Drift summary per role ---")
+    print(role_drift_summary.to_string(index=False))
 
-print(centroid_drift_df.to_string(index=False))
+    # ------------------------------------------------------
+    # Drift by tumour type
+    # ------------------------------------------------------
 
+    role_tumor_drift = (
+        drift_df.groupby(["role", "tumor"])["cosine_drift"]
+        .agg(["mean", "std", "count"])
+        .reset_index()
+    )
 
-# ---------------------------------------------------------------------------
-# Save results
-# ---------------------------------------------------------------------------
+    # ------------------------------------------------------
+    # Centroid-level drift
+    # ------------------------------------------------------
 
-with pd.ExcelWriter(f"{OUTPUT_DIR_ROLE}/persona_drift_full_analysis.xlsx") as w:
-    drift_df.to_excel(w, sheet_name="case_level", index=False)
-    role_drift_summary.to_excel(w, sheet_name="role_summary", index=False)
-    role_tumor_drift.to_excel(w, sheet_name="role_x_tumor", index=False)
-    centroid_drift_df.to_excel(w, sheet_name="centroid_drift", index=False)
+    print("\n--- Centroid-level drift ---")
 
-print(f"Persona drift saved → {OUTPUT_DIR_ROLE}/persona_drift_full_analysis.xlsx")
+    centroid_drift_rows = []
 
+    for role, single_col in SINGLE_REQUEST_EMBEDDING_COLS.items():
 
-# ===========================================================================
-# 7. Statistical separation test between roles (embedding means)
-# ===========================================================================
+        self_col = SELF_CONSISTENCY_EMBEDDING_COLS.get(role)
 
-print("\n=== Statistical separation test between roles ===")
+        if self_col is None:
+            continue
 
-role_means = {}
+        sv, tv = [], []
 
-for role in single_request_map.keys():
-
-    col = selfconsistency_map[role]
-
-    vals = []
-
-    if col in df.columns:
         for _, row in df.iterrows():
-            emb = parse_embedding(row.get(col))
-            if emb is not None:
-                vals.append(float(np.mean(emb)))
 
-    role_means[role] = vals
+            s = parse_embedding(row.get(single_col))
+            t = parse_embedding(row.get(self_col))
 
+            if s is not None and t is not None:
+                sv.append(s)
+                tv.append(t)
 
-groups = [v for v in role_means.values() if len(v) > 5]
+        if len(sv) > 0:
 
-if len(groups) >= 2:
-    stat, pval = f_oneway(*groups)
-    print(f"One-way ANOVA (embedding means): F = {stat:.4f}, p = {pval:.6f}")
+            centroid_drift_rows.append({
+                "role": role,
+                "centroid_cosine_drift": safe_cosine(
+                    np.mean(np.vstack(sv), axis=0),
+                    np.mean(np.vstack(tv), axis=0),
+                ),
+                "n_cases": len(sv),
+            })
+
+    centroid_drift_df = pd.DataFrame(centroid_drift_rows)
+
+    print(centroid_drift_df.to_string(index=False))
+
+    # ------------------------------------------------------
+    # Save drift results
+    # ------------------------------------------------------
+
+    with pd.ExcelWriter(f"{TABLE_DIR}/persona_drift_full_analysis.xlsx") as w:
+        drift_df.to_excel(w, sheet_name="case_level", index=False)
+        role_drift_summary.to_excel(w, sheet_name="role_summary", index=False)
+        role_tumor_drift.to_excel(w, sheet_name="role_x_tumor", index=False)
+        centroid_drift_df.to_excel(w, sheet_name="centroid_drift", index=False)
+
+    print(f"Persona drift saved → {TABLE_DIR}/persona_drift_full_analysis.xlsx")
+
 else:
-    print("Insufficient groups for ANOVA.")
+    print("No drift data available")
+
 
 print("\n=== Embedding Analysis Complete ===")

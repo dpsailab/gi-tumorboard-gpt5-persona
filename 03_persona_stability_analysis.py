@@ -37,7 +37,7 @@ computed and saved for inclusion in the supplementary materials:
   7. **Role Consistency Entropy Across Patients**
      Per-patient accuracy distribution entropy per role.
 
-All outputs are written to ``output/``.
+All outputs are written to ``output/persona_stability_analysis/``.
 
 Weight rationale
 ----------------
@@ -47,7 +47,6 @@ RISK_WEIGHTS) to facilitate sensitivity analyses.
 """
 
 import os
-
 import numpy as np
 import pandas as pd
 from scipy.special import softmax
@@ -56,42 +55,18 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from config import (
     CRI_WEIGHTS, DATA_FILE, OUTPUT_DIR_ROLE,
-    PSI_WEIGHTS, RISK_WEIGHTS, SPECIALIST_COLS,
-    ROLE_PREFIX_MAP, ROLES, FRAMEWORK_PREFIX_MAP
+    PSI_WEIGHTS, RISK_WEIGHTS,
+    ROLE_PREFIX_MAP, ROLES, SINGLE_REQUEST_EMBEDDING_COLS,
+    SELF_CONSISTENCY_EMBEDDING_COLS, SINGLE_REQUEST_CONCORDANCE_COLS,
 )
 
-from utils import compare_treatments, parse_embedding
+from utils import parse_embedding
 
 # ---------------------------------------------------------------------------
 # Directory setup
 # ---------------------------------------------------------------------------
-os.makedirs(OUTPUT_DIR_ROLE, exist_ok=True)
-
-# ---------------------------------------------------------------------------
-# Load data
-# ---------------------------------------------------------------------------
-df = pd.read_csv(DATA_FILE)
-
-
-from config import COLUMNS_ANSWER
-comparison_cols = COLUMNS_ANSWER[1:]
-
-ROLES = ["Surgeon", "Oncologist", "Radio-Oncologist"]
-
-# ---------------------------------------------------------------------------
-# Single-request embedding column map
-# ---------------------------------------------------------------------------
-SINGLE_EMB = {
-    "Surgeon": "F3_persona_surgeon_embeddings",
-    "Oncologist": "F4_persona_medical_oncologist_embeddings",
-    "Radio-Oncologist": "F5_persona_radiation_oncologist_embeddings",
-}
-SELF_EMB   = {
-    "Surgeon": "F2_multi_expert_consensus_surgeon_embeddings",
-    "Oncologist": "F2_multi_expert_consensus_oncologist_embeddings",
-    "Radio-Oncologist": "F2_multi_expert_consensus_radio-oncologist_embeddings",
-}
-
+TABLE_DIR = os.path.join(OUTPUT_DIR_ROLE, "persona_stability_analysis")
+os.makedirs(TABLE_DIR, exist_ok=True)
 
 # ===========================================================================
 # Helper: build role embedding matrices
@@ -120,6 +95,14 @@ def _build_role_vectors(emb_col_map: dict) -> dict:
                 vectors[role].append(v)
     return {r: np.array(v) for r, v in vectors.items() if len(v) >= 5}
 
+# ---------------------------------------------------------------------------
+# Load data
+# ---------------------------------------------------------------------------
+df = pd.read_csv(DATA_FILE)
+
+
+from config import COLUMNS_ANSWER
+comparison_cols = COLUMNS_ANSWER[1:]
 
 # ===========================================================================
 # 1. Persona Attractor Dispersion
@@ -172,11 +155,11 @@ def persona_attractor_dispersion(role_vectors: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-role_vectors_single = _build_role_vectors(SINGLE_EMB)
+role_vectors_single = _build_role_vectors(SINGLE_REQUEST_EMBEDDING_COLS)
 pad_df = persona_attractor_dispersion(role_vectors_single)
 print("\n=== Persona Attractor Dispersion ===")
 print(pad_df.to_string(index=False))
-pad_df.to_excel(f"{OUTPUT_DIR_ROLE}/persona_attractor_dispersion.xlsx", index=False)
+pad_df.to_excel(f"{TABLE_DIR}/persona_attractor_dispersion.xlsx", index=False)
 
 
 # ===========================================================================
@@ -220,78 +203,87 @@ def role_confusion_entropy(role_vectors: dict) -> pd.DataFrame:
 rce_df = role_confusion_entropy(role_vectors_single)
 print("\n=== Role Confusion Entropy ===")
 print(rce_df.to_string(index=False))
-rce_df.to_excel(f"{OUTPUT_DIR_ROLE}/role_confusion_entropy.xlsx", index=False)
+rce_df.to_excel(f"{TABLE_DIR}/role_confusion_entropy.xlsx", index=False)
 
 
 # ===========================================================================
-# Role Consistency Entropy Across Patients (ROBUST VERSION)
+# 3. Role Performance Variability Entropy (Single Persona Framework)
 # ===========================================================================
 
-from scipy.stats import entropy
-
-
-def role_consistency_entropy_across_patients(
+def role_performance_variability_entropy(
         df: pd.DataFrame,
         role_map: dict,
-        self_consistency_map: dict
+        min_cases: int = 10
 ) -> pd.DataFrame:
     """
-    Shannon entropy of per-patient accuracy distribution per role.
+    Compute Shannon entropy of role-specific treatment concordance
+    across patients (single persona framework only).
 
-    Uses explicit column mappings (robust to renaming and framework changes).
+    This metric quantifies how variable each specialist role's
+    treatment accuracy is across clinical cases.
+
+    Interpretation
+    --------------
+    - Low entropy  -> Stable performance across patients
+                     (consistently high or consistently low accuracy)
+
+    - High entropy -> High variability in performance
+                     (accuracy strongly case-dependent)
+
+    IMPORTANT:
+    This function does NOT compare frameworks.
+    It only evaluates role-level variability within
+    the single-persona setting (F3/F4/F5).
 
     Parameters
     ----------
-    df :
-        Main dataset.
-    role_map :
-        Mapping role_name -> primary treatment concordance column.
-        Example:
-            {
-                "Surgeon": "F3_persona_surgeon_treatment_concordance",
-                ...
-            }
+    df : pandas.DataFrame
+        Main dataset containing treatment concordance columns.
 
-    self_consistency_map :
-        Mapping role_name -> self-consistency concordance column.
+    role_map : dict
+        Mapping role_name -> treatment concordance column.
         Example:
-            {
-                "Surgeon": "F2_multi_expert_consensus_surgeon_treatment_concordance",
-                ...
-            }
+        {
+            "Surgeon": "F3_persona_surgeon_treatment_concordance",
+            "Oncologist": "F4_persona_medical_oncologist_treatment_concordance",
+            "Radio-Oncologist": "F5_persona_radiation_oncologist_treatment_concordance",
+        }
+
+    min_cases : int
+        Minimum number of valid patients required to compute entropy.
 
     Returns
     -------
     pandas.DataFrame
+        Columns:
+        - role
+        - accuracy_entropy_bits
+        - mean_accuracy
+        - std_accuracy
+        - n_patients
     """
 
     rows = []
 
-    for role in role_map.keys():
+    for role, col in role_map.items():
 
-        primary_col = role_map[role]
-        self_col = self_consistency_map.get(role)
-
-        if primary_col not in df.columns or self_col not in df.columns:
-            print(f"Missing columns for {role}")
+        if col not in df.columns:
+            print(f"Missing column for {role}")
             continue
 
-        # Convert to numeric accuracy signals
-        tmp = df[[primary_col, self_col]].apply(pd.to_numeric, errors="coerce")
+        acc = pd.to_numeric(df[col], errors="coerce").dropna()
 
-        # Patient-level mean accuracy across frameworks
-        patient_acc = tmp.mean(axis=1).dropna()
+        if len(acc) >= min_cases:
 
-        # Entropy computation
-        if len(patient_acc) > 10:
-
+            # Histogram over [0,1]
             hist, _ = np.histogram(
-                patient_acc,
+                acc,
                 bins=10,
                 range=(0, 1),
                 density=False
             )
 
+            # Laplace smoothing for stability
             prob = (hist + 1e-9) / np.sum(hist + 1e-9)
 
             H = float(entropy(prob, base=2))
@@ -301,14 +293,28 @@ def role_consistency_entropy_across_patients(
 
         rows.append({
             "role": role,
-            "consistency_entropy_bits": H,
-            "mean_patient_accuracy": float(patient_acc.mean()),
-            "n_valid_patients": len(patient_acc)
+            "accuracy_entropy_bits": H,
+            "mean_accuracy": float(acc.mean()) if len(acc) > 0 else np.nan,
+            "std_accuracy": float(acc.std()) if len(acc) > 0 else np.nan,
+            "n_patients": len(acc)
         })
 
     return pd.DataFrame(rows)
 
 
+variability_df = role_performance_variability_entropy(
+    df,
+    role_map=SINGLE_REQUEST_CONCORDANCE_COLS,
+    min_cases=10
+)
+
+print("\n=== Role Performance Variability Entropy (Single Persona) ===")
+print(variability_df.to_string(index=False))
+
+variability_df.to_excel(
+    f"{TABLE_DIR}/role_performance_variability_entropy.xlsx",
+    index=False
+)
 # ===========================================================================
 # 4. Single vs Self-consistency cosine similarity
 # ===========================================================================
@@ -330,8 +336,8 @@ def persona_cosine_similarity(df: pd.DataFrame, roles: list) -> pd.DataFrame:
     """
     rows = []
     for role in roles:
-        single_col = SINGLE_EMB[role]
-        self_col   = SELF_EMB[role]
+        single_col = SINGLE_REQUEST_EMBEDDING_COLS[role]
+        self_col = SELF_CONSISTENCY_EMBEDDING_COLS[role]
         if single_col not in df.columns or self_col not in df.columns:
             continue
         sims = []
@@ -354,7 +360,7 @@ def persona_cosine_similarity(df: pd.DataFrame, roles: list) -> pd.DataFrame:
 cosine_df = persona_cosine_similarity(df, ROLES)
 print("\n=== Single vs Self-consistency Cosine Similarity ===")
 print(cosine_df.to_string(index=False))
-cosine_df.to_excel(f"{OUTPUT_DIR_ROLE}/persona_cosine_similarity.xlsx", index=False)
+cosine_df.to_excel(f"{TABLE_DIR}/persona_cosine_similarity.xlsx", index=False)
 
 
 # ===========================================================================
@@ -424,7 +430,7 @@ def persona_stability_index(df: pd.DataFrame,
 
 psi_df = persona_stability_index(df, cosine_df)
 
-psi_df.to_excel(f"{OUTPUT_DIR_ROLE}/persona_stability_index.xlsx", index=False)
+psi_df.to_excel(f"{TABLE_DIR}/persona_stability_index.xlsx", index=False)
 
 print("\n=== Persona Stability Index ===")
 print(psi_df.to_string(index=False))
@@ -508,7 +514,7 @@ def composite_robustness_index(df: pd.DataFrame,
 
 cri_df = composite_robustness_index(df, cosine_df)
 
-cri_df.to_excel(f"{OUTPUT_DIR_ROLE}/composite_robustness_index.xlsx", index=False)
+cri_df.to_excel(f"{TABLE_DIR}/composite_robustness_index.xlsx", index=False)
 
 print("\n=== Composite Robustness Index ===")
 print(cri_df.to_string(index=False))
@@ -572,7 +578,7 @@ def boundary_violation_entropy(df: pd.DataFrame) -> pd.DataFrame:
 
 boundary_df = boundary_violation_entropy(df)
 
-boundary_df.to_excel(f"{OUTPUT_DIR_ROLE}/boundary_entropy.xlsx", index=False)
+boundary_df.to_excel(f"{TABLE_DIR}/boundary_entropy.xlsx", index=False)
 
 print("\n=== Role Boundary Violation Entropy ===")
 print(boundary_df.to_string(index=False))
@@ -633,7 +639,7 @@ print("\n=== Clinical Risk Penalty Score ===")
 print(risk_df.to_string(index=False))
 
 risk_df.to_excel(
-    f"{OUTPUT_DIR_ROLE}/clinical_risk_score.xlsx",
+    f"{TABLE_DIR}/clinical_risk_score.xlsx",
     index=False
 )
 
@@ -719,11 +725,11 @@ for role_name, prefix in ROLE_PREFIX_MAP.items():
 summary_df = pd.DataFrame(summary_rows).set_index("Role")
 
 summary_df.to_excel(
-    f"{OUTPUT_DIR_ROLE}/analysis_summary.xlsx",
+    f"{TABLE_DIR}/analysis_summary.xlsx",
     index=True
 )
 
-print(f"\nSummary → {OUTPUT_DIR_ROLE}/analysis_summary.xlsx")
+print(f"\nSummary → {TABLE_DIR}/analysis_summary.xlsx")
 print(summary_df.T.to_string())
 
 print("\n=== Persona Stability Analysis Complete ===")

@@ -15,7 +15,7 @@ Analyses
 - Tumour type distribution: counts and percentages
 - Treatment recommendation distribution (Tumour Board): overall and by tumour type
 
-Outputs (saved to ``role/tables/``)
+Outputs (saved to ``output/demographics/``)
 -------------------------------------
 - table_age_overall.csv
 - table_age_by_tumour.csv
@@ -53,7 +53,7 @@ from config import (
 # ---------------------------------------------------------------------------
 # Output directory
 # ---------------------------------------------------------------------------
-TABLE_DIR = os.path.join(OUTPUT_DIR_ROLE, "tables")
+TABLE_DIR = os.path.join(OUTPUT_DIR_ROLE, "demographics")
 os.makedirs(TABLE_DIR, exist_ok=True)
 
 # ---------------------------------------------------------------------------

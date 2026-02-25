@@ -8,7 +8,7 @@ role personas (Surgeon, Oncologist, Radio-Oncologist) and a majority-vote
 aggregation scheme against the reference standard defined by the institutional
 multidisciplinary tumour board (MTB) record (``tumorboard_treatment``).
 
-Outputs (saved to ``role/`` and ``img/role/``):
+Outputs (saved to ``output/agreement_analysis`` and ``output/agreement_analysis/img``):
   - Overall and stratified agreement rates (Excel)
   - Bar charts per condition (PNG, 300 dpi)
   - Comparison heatmap (PNG)
@@ -22,8 +22,6 @@ Statistical tests performed:
 """
 
 import os
-from collections import Counter
-import ast
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -33,21 +31,22 @@ from scipy.stats import entropy
 
 from config import (
     BAR_COLORS,
-    COLOR_1, COLOR_2, COLOR_3,
-    COLUMNS_ANSWER, COLUMNS_ANSWER_RENAME,
+    ROLE_COLORS,
     DATA_FILE,
-    OUTPUT_DIR_IMG_ROLE, OUTPUT_DIR_ROLE,
+    OUTPUT_DIR_IMG_ROLE,
+    OUTPUT_DIR_ROLE,
     RENAME_DICT,
     SHOW_PLOTS,
-    SPECIALIST_COLS,
     TITLE_COLUMN_RENAME,
     VALUE_RENAME,
+    COLUMNS_ANSWER,
+    ROLE_PREFIX_MAP,
 )
+
 from utils import (
     calculate_correct_counts,
     calculate_correct_percentages,
     cochran_and_mcnemar,
-    proportions_ztest_holm,
     wilson_ci,
     parse_treatment_list_column
 )
@@ -55,8 +54,11 @@ from utils import (
 # ---------------------------------------------------------------------------
 # Directory setup
 # ---------------------------------------------------------------------------
-os.makedirs(OUTPUT_DIR_ROLE, exist_ok=True)
-os.makedirs(OUTPUT_DIR_IMG_ROLE, exist_ok=True)
+
+TABLE_DIR = os.path.join(OUTPUT_DIR_ROLE, "agreement_analysis")
+IMG_DIR = os.path.join(OUTPUT_DIR_ROLE, "agreement_analysis/img")
+os.makedirs(TABLE_DIR, exist_ok=True)
+os.makedirs(IMG_DIR, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # Load data
@@ -86,20 +88,32 @@ ci_table    = wilson_ci(df, comparison_cols, RENAME_DICT)
 print("\n=== Overall Agreement Rates (95 % Wilson CI) ===")
 print(ci_table.to_string(index=False))
 
-ci_table.to_excel(f"{OUTPUT_DIR_ROLE}/overall_agreement_ci.xlsx", index=False)
+ci_table.to_excel(f"{TABLE_DIR}/overall_agreement_ci.xlsx", index=False)
 
 # ---------------------------------------------------------------------------
 # Statistical tests
 # ---------------------------------------------------------------------------
 comp_binary_cols = [f"{c}_treatment_concordance" for c in comparison_cols]
 
-mcnemar_matrix = cochran_and_mcnemar(df, comp_binary_cols)
-mcnemar_matrix.to_excel(f"{OUTPUT_DIR_ROLE}/mcnemar_matrix.xlsx")
+results = cochran_and_mcnemar(df, comp_binary_cols)
 
-holm_results = proportions_ztest_holm(percentages, total=len(df))
-holm_results.to_excel(f"{OUTPUT_DIR_ROLE}/holm_bonferroni_results.xlsx", index=False)
-print("\n=== Holm–Bonferroni Corrected Pairwise Tests ===")
-print(holm_results.to_string(index=False))
+print("=== Cochran's Q Test ===")
+q = results["cochran"]
+
+print(
+    f"Q = {q['Q']:.3f}, "
+    f"df = {q['df']}, "
+    f"p = {q['pvalue']:.4f}, "
+    f"reject = {q['reject']}"
+)
+
+print("\n=== Pairwise McNemar Matrix ===")
+print(results["pairwise_matrix"])
+
+results["pairwise_matrix"].to_excel(
+    f"{TABLE_DIR}/mcnemar_matrix.xlsx"
+)
+
 
 # ---------------------------------------------------------------------------
 # Per-tumour Wilson CIs
@@ -123,7 +137,7 @@ for tumor in df["tumour_type"].unique():
         ))
 
 ci_by_tumor_df = pd.DataFrame(ci_by_tumor_rows)
-ci_by_tumor_df.to_excel(f"{OUTPUT_DIR_ROLE}/ci_by_tumor_type.xlsx", index=False)
+ci_by_tumor_df.to_excel(f"{TABLE_DIR}/ci_by_tumor_type.xlsx", index=False)
 print(ci_by_tumor_df.to_string(index=False))
 
 
@@ -162,7 +176,7 @@ def plot_concordance_heatmap(df: pd.DataFrame, comparison_cols: list,
     plt.figure(figsize=(12, 8))
     sns.heatmap(
         matrix,
-        cmap=sns.color_palette(["#D62828", "#4CAF50"]),
+        cmap=sns.color_palette("RdYlGn", as_cmap=True),
         linewidths=0.5,
         linecolor="white",
         cbar=False,
@@ -253,11 +267,11 @@ def plot_sub_analysis(df: pd.DataFrame, column_name: str,
 # ---------------------------------------------------------------------------
 # Run visualisations
 # ---------------------------------------------------------------------------
-plot_concordance_heatmap(df, comparison_cols, OUTPUT_DIR_IMG_ROLE)
-plot_overall_bar(percentages, RENAME_DICT, "Overall Agreement Rates", OUTPUT_DIR_IMG_ROLE)
-plot_sub_analysis(df, "tumour_type",           comparison_cols, RENAME_DICT, OUTPUT_DIR_IMG_ROLE)
-plot_sub_analysis(df, "presentation",                     comparison_cols, RENAME_DICT, OUTPUT_DIR_IMG_ROLE)
-plot_sub_analysis(df, "tumorboard_primary_treatment", comparison_cols, RENAME_DICT, OUTPUT_DIR_IMG_ROLE)
+plot_concordance_heatmap(df, comparison_cols, IMG_DIR)
+plot_overall_bar(percentages, RENAME_DICT, "Overall Agreement Rates", IMG_DIR)
+plot_sub_analysis(df, "tumour_type",           comparison_cols, RENAME_DICT, IMG_DIR)
+plot_sub_analysis(df, "presentation",                     comparison_cols, RENAME_DICT, IMG_DIR)
+plot_sub_analysis(df, "tumorboard_primary_treatment", comparison_cols, RENAME_DICT, IMG_DIR)
 
 
 # ===========================================================================
@@ -280,7 +294,7 @@ def create_stacked_bar_treatment(df: pd.DataFrame,
     )
     grouped[diagnosis_col] = grouped[diagnosis_col].replace(VALUE_RENAME)
     grouped[evwv_col]      = grouped[evwv_col].replace(VALUE_RENAME)
-    grouped.to_excel(f"{OUTPUT_DIR_ROLE}/recommendation_per_tumor_type.xlsx", index=False)
+    grouped.to_excel(f"{TABLE_DIR}/recommendation_per_tumor_type.xlsx", index=False)
 
     grouped["combined_label"] = (
         grouped[diagnosis_col].astype(str) + " — " + grouped[evwv_col].astype(str)
@@ -373,13 +387,13 @@ def create_treatment_summary_table(df: pd.DataFrame, diagnosis_col: str,
 
 
 create_stacked_bar_treatment(df, "tumour_type", "presentation",
-                              "tumorboard_primary_treatment", OUTPUT_DIR_IMG_ROLE)
+                              "tumorboard_primary_treatment", IMG_DIR)
 create_treatment_summary_table(
     df,
     diagnosis_col="tumour_type",
     evwv_col="presentation",
     treatment_col="tumorboard_primary_treatment",
-    save_path=f"{OUTPUT_DIR_ROLE}/treatment_summary_by_diagnosis.xlsx",
+    save_path=f"{TABLE_DIR}/treatment_summary_by_diagnosis.xlsx",
 )
 
 
@@ -388,26 +402,21 @@ create_treatment_summary_table(
 # ===========================================================================
 
 def build_role_treatment_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Reshape specialist treatment columns into a long-format DataFrame.
-
-    Returns a table with columns: ``Role``, ``Treatment``.
-    Applies ``VALUE_RENAME`` to standardise treatment labels.
-    """
     records = []
-    role_map = {
-        "F3_persona_surgeon_treatment":                  "Surgeon",
-        "F4_persona_medical_oncologist_treatment":       "Oncologist",
-        "F5_persona_radiation_oncologist_treatment":     "Radio-Oncologist",
-    }
-    for col, label in role_map.items():
-        if col in df.columns:
-            for val in df[col].dropna():
-                records.append({"Role": label, "Treatment": val})
 
-    result = pd.DataFrame(records)
-    result["Treatment"] = result["Treatment"].replace(VALUE_RENAME)
-    return result
+    for role, prefix in ROLE_PREFIX_MAP.items():
+        col = f"{prefix}_treatment"
+
+        if col not in df.columns:
+            continue
+
+        for val in df[col].dropna():
+            records.append({
+                "Role": role,
+                "Treatment": VALUE_RENAME.get(val, val)
+            })
+
+    return pd.DataFrame(records)
 
 
 def plot_role_treatment_distribution(stats: pd.DataFrame, save_dir: str) -> None:
@@ -421,11 +430,7 @@ def plot_role_treatment_distribution(stats: pd.DataFrame, save_dir: str) -> None
     save_dir :
         Output directory.
     """
-    role_colors = {
-        "Surgeon":          COLOR_1,
-        "Oncologist":       COLOR_2,
-        "Radio-Oncologist": COLOR_3,
-    }
+    role_colors = ROLE_COLORS
     plt.figure(figsize=(14, 6))
     sns.barplot(
         data=stats, x="Treatment", y="Percentage",
@@ -453,11 +458,11 @@ role_treatment_stats["Percentage"] = (
     .groupby("Role")["Count"]
     .transform(lambda x: x / x.sum() * 100)
 )
-plot_role_treatment_distribution(role_treatment_stats, OUTPUT_DIR_IMG_ROLE)
+plot_role_treatment_distribution(role_treatment_stats, IMG_DIR)
 
 print('=== Role Treatment Statistics ===')
 print(role_treatment_stats)
-role_treatment_stats.to_excel(f"{OUTPUT_DIR_ROLE}/role_treatment_percentages.xlsx", index=False)
+role_treatment_stats.to_excel(f"{TABLE_DIR}/role_treatment_percentages.xlsx", index=False)
 
 
 role_treatment_cols = [
@@ -470,6 +475,8 @@ def shannon_entropy_row(row):
     vals = [row[c] for c in role_treatment_cols if pd.notna(row[c])]
     if not vals: return np.nan
     counts = pd.Series(vals).value_counts(normalize=True)
+    if len(counts) == 0:
+        return np.nan
     return float(entropy(counts, base=2))
 
 df['treatment_entropy_bits'] = df.apply(shannon_entropy_row, axis=1)
@@ -520,7 +527,7 @@ doc = Document()
 _add_table_to_doc(doc, df, "tumour_type",           comparison_cols, RENAME_DICT)
 _add_table_to_doc(doc, df, "presentation",                     comparison_cols, RENAME_DICT)
 _add_table_to_doc(doc, df, "tumorboard_primary_treatment", comparison_cols, RENAME_DICT)
-doc.save(f"{OUTPUT_DIR_ROLE}/Analysis_Tables_role.docx")
-print(f"Word tables saved → {OUTPUT_DIR_ROLE}/Analysis_Tables_role.docx")
+doc.save(f"{TABLE_DIR}/Analysis_Tables_role.docx")
+print(f"Word tables saved → {TABLE_DIR}/Analysis_Tables_role.docx")
 
 print("\n=== Agreement Analysis Complete ===")

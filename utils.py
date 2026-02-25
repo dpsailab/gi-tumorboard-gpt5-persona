@@ -133,54 +133,61 @@ def compute_majority_treatment(row: pd.Series, specialist_cols: list) -> Optiona
     return counts.most_common(1)[0][0]
 
 
-def compare_treatments(df: pd.DataFrame, reference_col: str,
-                       comparison_cols: list) -> pd.DataFrame:
+def compare_treatments(df, reference_col, comparison_cols):
     """
-    Append binary comparison columns to *df* for each model in *comparison_cols*.
+    Compute binary treatment concordance between a reference standard and one or
+    more model outputs.
 
-    For every patient × model pair a new column ``{col}_comparison`` is
-    created with value 1 if the model's treatment matches the reference
-    (or its documented alternative) and 0 otherwise.
+    For each model listed in *comparison_cols*, a new column
+    ``{col}_treatment_concordance`` is appended to the DataFrame. The value is:
+
+        1 → if the model’s predicted treatment matches either:
+              (a) the primary reference treatment, or
+              (b) the documented alternative reference treatment (if present)
+        0 → otherwise
+
+    Concordance is evaluated per patient (row-wise comparison).
 
     Parameters
     ----------
-    df :
-        Input DataFrame.  Must contain ``{reference_col}_treatment``,
-        ``{reference_col}_treatment_alternativ``, and
-        ``{col}_treatment`` for each ``col`` in *comparison_cols*.
-    reference_col :
-        Base name of the reference standard column (e.g.
-        ``"tumorboard_treatment"``).
-    comparison_cols :
-        List of model base-name columns to evaluate.
+    df : pandas.DataFrame
+        Input DataFrame containing:
+            - ``{reference_col}_treatment`` (primary reference decision)
+            - ``{reference_col}_treatment_alternativ`` (optional alternative decision)
+            - ``{col}_treatment`` for each model in *comparison_cols*
+
+    reference_col : str
+        Base name of the reference standard (e.g. "tumorboard").
+        The function expects the corresponding treatment columns to follow
+        the naming convention described above.
+
+    comparison_cols : list of str
+        List of model base names for which concordance with the reference
+        standard will be evaluated.
 
     Returns
     -------
     pandas.DataFrame
-        The input DataFrame with ``{col}_comparison`` columns appended.
+        A copy of the input DataFrame with one additional binary column per
+        model: ``{col}_treatment_concordance``.
     """
-    ref_treatment_col = f"{reference_col}_treatment"
-    ref_alt_col       = f"{reference_col}_treatment_alternativ"
+
+    df = df.copy()
+
+    ref = df[f"{reference_col}_treatment"]
+    ref_alt = df[f"{reference_col}_treatment_alternativ"]
 
     for col in comparison_cols:
-        comp_col = f"{col}_comparison"
-        results  = []
+        pred = df[f"{col}_treatment"]
 
-        for _, row in df.iterrows():
-            ref     = row.get(ref_treatment_col)
-            ref_alt = row.get(ref_alt_col)
-            pred    = row.get(f"{col}_treatment")
+        match = (
+            (pred == ref) |
+            ((pred == ref_alt) & ref_alt.notna())
+        )
 
-            if pd.isna(ref) or pd.isna(pred):
-                results.append(0)
-            else:
-                match = (ref == pred) or (pd.notna(ref_alt) and ref_alt == pred)
-                results.append(int(match))
-
-        df[comp_col] = results
+        df[f"{col}_treatment_concordance"] = match.astype(int)
 
     return df
-
 
 # ===========================================================================
 # Accuracy & confidence-interval helpers
@@ -193,7 +200,7 @@ def calculate_correct_counts(df: pd.DataFrame, comparison_cols: list) -> dict:
     Parameters
     ----------
     df :
-        DataFrame containing ``{col}_comparison`` columns.
+        DataFrame containing ``{col}_treatment_concordance`` columns.
     comparison_cols :
         List of model base-name columns.
 
@@ -341,85 +348,53 @@ def run_cochran_q(df: pd.DataFrame, comparison_cols: list,
 
 def cochran_and_mcnemar(df: pd.DataFrame, comparison_cols: list,
                         alpha: float = 0.05,
-                        return_statistic: bool = True) -> pd.DataFrame:
+                        return_statistic: bool = True) -> dict:
     """
-    Run Cochran's Q, then produce a pairwise McNemar matrix.
+    Run Cochran's Q and pairwise McNemar tests.
 
     Parameters
     ----------
     df :
         DataFrame with binary (0/1) comparison columns.
     comparison_cols :
-        Exactly the ``{col}_treatment_concordance`` columns to test.
+        List of ``{col}_treatment_concordance`` columns.
     alpha :
         Significance threshold.
     return_statistic :
-        If True, the matrix cells contain the McNemar χ² statistic.
-        If False, the matrix cells contain the raw p-values.
+        If True → return χ² statistic matrix.
+        If False → return p-value matrix.
 
     Returns
     -------
-    pandas.DataFrame
-        Symmetric N×N matrix (NaN on diagonal = self-comparison not meaningful).
+    dict
+        {
+            "cochran": dict,
+            "pairwise_matrix": pandas.DataFrame
+        }
     """
-    q_res = run_cochran_q(df, comparison_cols, alpha=alpha)
-    print("=== Cochran's Q Test ===")
-    print(f"Q = {q_res['Q']:.3f}, df = {q_res['df']}, "
-          f"p = {q_res['pvalue']:.4f}, reject = {q_res['reject']}\n")
 
-    matrix = pd.DataFrame(np.nan, index=comparison_cols, columns=comparison_cols)
-    print("=== Pairwise McNemar Tests ===")
+    q_res = run_cochran_q(df, comparison_cols, alpha=alpha)
+
+    matrix = pd.DataFrame(
+        np.nan,
+        index=comparison_cols,
+        columns=comparison_cols
+    )
+
     for c1, c2 in itertools.combinations(comparison_cols, 2):
         res = run_mcnemar(df, c1, c2, alpha=alpha)
+
         val = res["statistic"] if return_statistic else res["pvalue"]
+
         matrix.loc[c1, c2] = val
         matrix.loc[c2, c1] = val
-        print(f"{c1} vs {c2}: b={res['b']}, c={res['c']}, "
-              f"χ²={res['statistic']:.2f}, p={res['pvalue']:.4f}, "
-              f"reject={res['reject']}")
 
-    vals = matrix.values.copy()
-    np.fill_diagonal(vals, 0.0)
-    matrix = pd.DataFrame(vals, index=matrix.index, columns=matrix.columns)
-    return matrix
+    np.fill_diagonal(matrix.to_numpy(copy=True), 0.0)
 
-
-def proportions_ztest_holm(percentages: dict, total: int = 100) -> pd.DataFrame:
-    """
-    Pairwise proportion z-tests with Holm–Bonferroni correction.
-
-    Parameters
-    ----------
-    percentages :
-        Dict of ``{label: percentage_correct}``.  Percentage values are
-        internally converted to integer counts assuming *total* observations.
-    total :
-        Number of observations per condition.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Columns: label, raw_p, adjusted_p, reject.
-    """
-    keys  = list(percentages.keys())
-    pairs = list(itertools.combinations(keys, 2))
-    pvals, labels = [], []
-
-    for k1, k2 in pairs:
-        counts = [int(percentages[k1]), int(percentages[k2])]
-        nobs   = [total, total]
-        _, p   = sm.stats.proportions_ztest(counts, nobs, alternative="two-sided")
-        pvals.append(p)
-        labels.append(f"{k1} vs {k2}")
-
-    reject, pvals_adj, _, _ = multipletests(pvals, alpha=0.05, method="holm")
-
-    return pd.DataFrame({
-        "comparison": labels,
-        "raw_p": pvals,
-        "holm_adjusted_p": pvals_adj,
-        "reject": reject,
-    })
+    return {
+        "cochran": q_res,
+        "pairwise_matrix": matrix
+    }
 
 def parse_treatment_list_column(df: pd.DataFrame,
                                 column: str,

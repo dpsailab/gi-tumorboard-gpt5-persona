@@ -1,87 +1,119 @@
 """
 config.py
 =========
-Centralised configuration for all analysis scripts.
 
-Defines column names, display labels, value mappings, colour schemes,
-and global runtime flags.  Importing this module from any other script
-guarantees that every parameter is consistent across the pipeline.
+Centralised configuration for analysis pipelines.
 
-Study context
--------------
-This code accompanies a study evaluating whether assigning specialist
-role personas (Surgeon, Oncologist, Radio-Oncologist) to a large language
-model (GPT-5 / ChatGPT) improves alignment with multidisciplinary tumour
-board (MTB) recommendations for gastrointestinal oncology cases.
+This module defines:
+- Dataset paths
+- Role personas
+- Column naming conventions
+- Visualization styling
+- Statistical metric weights
+
+Study context:
+Evaluation of LLM persona effects on multidisciplinary tumour board agreement
+in gastrointestinal oncology decision support.
 """
 
-# ---------------------------------------------------------------------------
-# Runtime flags
-# ---------------------------------------------------------------------------
+# ==========================================================
+# Runtime Flags
+# ==========================================================
 
-# Set to True during development to display plots interactively.
-# Must be False for headless (cluster / CI) execution.
 SHOW_PLOTS: bool = False
 
-# Set to True to run UMAP dimensionality reduction (requires `umap-learn`).
-# UMAP is computationally expensive; disable for fast iteration.
-DO_UMAP: bool = False
-
-# ---------------------------------------------------------------------------
-# Data source
-# ---------------------------------------------------------------------------
+# ==========================================================
+# Data
+# ==========================================================
 
 DATA_FILE: str = "data/LLM_MDTB_dataset_repository.csv"
 
-# ---------------------------------------------------------------------------
-# Colour palette
-# ---------------------------------------------------------------------------
-# Coral gradient palette used consistently across all figures.
-COLOR_1: str = "#FADADD"   # light coral  → Surgeon
-COLOR_2: str = "#F08080"   # medium coral → Oncologist
-COLOR_3: str = "#FFA07A"   # salmon coral → Radio-Oncologist
+# ==========================================================
+# Role Registry
+# ==========================================================
 
-# Role-specific colour mapping (used in grouped bar charts and UMAP plots).
-ROLE_COLORS: dict = {
-    "Surgeon":          "#E9C46A",
-    "Oncologist":       "#2A9D8F",
-    "Radio-Oncologist": "#457B9D",
+ROLE_CONFIG = {
+    "Simulated Tumorboard": {
+        "prefix": "F1_MDTB_simulation",
+        "color": "#9467bd",
+    },
+    "Surgeon": {
+        "prefix": "F3_persona_surgeon",
+        "color": "#1f77b4",
+    },
+    "Oncologist": {
+        "prefix": "F4_persona_medical_oncologist",
+        "color": "#ff7f0e",
+    },
+    "Radio-Oncologist": {
+        "prefix": "F5_persona_radiation_oncologist",
+        "color": "#2ca02c",
+    },
 }
 
-# Bar-chart palette for sequential display of up to 6 groups.
-BAR_COLORS: list = [
-    "#E63946",   # red
-    "#F4A261",   # orange
-    "#E9C46A",   # yellow
-    "#2A9D8F",   # teal
-    "#457B9D",   # blue
-    "#6A4C93",   # purple
+ROLES = list(ROLE_CONFIG.keys())
+
+# ==========================================================
+# Column Factory Helpers
+# ==========================================================
+
+def _treatment_col(prefix: str) -> str:
+    return f"{prefix}_treatment"
+
+def _embedding_col(prefix: str) -> str:
+    return f"{prefix}_embeddings"
+
+def _domain_col(prefix: str) -> str:
+    return f"{prefix}_domain_content_present"
+
+def _boundary_col(prefix: str) -> str:
+    return f"{prefix}_boundary_violation"
+
+def _concordance_col(prefix: str) -> str:
+    return f"{prefix}_treatment_concordance"
+
+# ==========================================================
+# Derived Column Mappings
+# ==========================================================
+
+REFERENCE_TREATMENT_COL = "tumorboard_primary_treatment"
+
+SPECIALIST_COLS = [
+    _treatment_col(cfg["prefix"])
+    for cfg in ROLE_CONFIG.values()
 ]
 
-# ---------------------------------------------------------------------------
-# Specialist role columns (treatment predictions)
-# ---------------------------------------------------------------------------
+METHOD_TREATMENT_COLS = {
+    role: _treatment_col(cfg["prefix"])
+    for role, cfg in ROLE_CONFIG.items()
+}
 
-SPECIALIST_COLS: list = [
-    "F3_persona_surgeon_treatment",
-    "F4_persona_medical_oncologist_treatment",
-    "F5_persona_radiation_oncologist_treatment",
+ROLE_PREFIX_MAP = {
+    role: cfg["prefix"]
+    for role, cfg in ROLE_CONFIG.items()
+}
+
+# Single-request concordance columns
+SINGLE_REQUEST_CONCORDANCE_COLS = {
+    role: _concordance_col(cfg["prefix"])
+    for role, cfg in ROLE_CONFIG.items()
+}
+
+# ==========================================================
+# Model Output Columns
+# ==========================================================
+
+COLUMNS_ANSWER = [
+    "tumorboard_treatment",
+    "F1_MDTB_simulation",
+    "F2_multi_expert_consensus",
+    "F3_persona_surgeon",
+    "F4_persona_medical_oncologist",
+    "F5_persona_radiation_oncologist",
+    "F6_majority_vote",
 ]
 
-# All LLM output columns to compare against the reference standard
-# (index 0 = reference; indices 1-N = comparison columns).
-COLUMNS_ANSWER: list = [
-    "tumorboard_treatment",                             # Reference: MTB decision                   # Reference: MTB decision (primary)
-    "F1_MDTB_simulation",                               # Baseline (no persona)
-    "F2_multi_expert_consensus",                        # Multi-expert prompt
-    "F3_persona_surgeon",                               # Surgeon persona
-    "F4_persona_medical_oncologist",                    # Oncologist persona
-    "F5_persona_radiation_oncologist",                  # Radio-Oncologist persona
-    "F6_majority_vote",                                 # Majority vote across roles
-]
-
-# Human-readable labels corresponding to COLUMNS_ANSWER[1:] (reference excluded)
-COLUMNS_ANSWER_RENAME: list = [
+COLUMNS_ANSWER_RENAME = [
     "Simulated Tumorboard",
     "Multi-Expert",
     "Surgeon",
@@ -90,63 +122,98 @@ COLUMNS_ANSWER_RENAME: list = [
     "Majority Vote",
 ]
 
-# Mapping from raw column names to display labels (for plot axes / tables)
-RENAME_DICT: dict = dict(zip(COLUMNS_ANSWER[1:], COLUMNS_ANSWER_RENAME))
+RENAME_DICT = dict(zip(COLUMNS_ANSWER[1:], COLUMNS_ANSWER_RENAME))
 
-# ---------------------------------------------------------------------------
-# Axis and column title mappings
-# ---------------------------------------------------------------------------
+# ==========================================================
+# Signal Columns
+# ==========================================================
 
-TITLE_COLUMN_RENAME: dict = {
-    "tumour_type":         "Tumour Type",
-    "presentation":                   "Consultation Type",
+SIGNAL_COLUMNS = [
+    (
+        prefix,
+        role,
+        _domain_col(prefix),
+        _boundary_col(prefix),
+        _concordance_col(prefix),
+    )
+    for role, cfg in ROLE_CONFIG.items()
+    for prefix in [cfg["prefix"]]
+]
+
+# ==========================================================
+# Embedding Columns
+# ==========================================================
+
+EMBEDDING_COLS = {
+    role: _embedding_col(cfg["prefix"])
+    for role, cfg in ROLE_CONFIG.items()
+}
+
+
+# Single-request persona embeddings
+SINGLE_REQUEST_EMBEDDING_COLS = {
+    role: f"{cfg['prefix']}_embeddings"
+    for role, cfg in ROLE_CONFIG.items()
+}
+
+# Self-consistency embeddings
+SELF_CONSISTENCY_EMBEDDING_COLS = {
+    role: f"F2_multi_expert_consensus_{'tumorboard' if role == 'Simulated Tumorboard' else role.lower()}_embeddings"
+    for role in ROLE_CONFIG.keys()
+}
+
+
+# ==========================================================
+# Visualization Styling
+# ==========================================================
+
+ROLE_COLORS = {
+    role: cfg["color"]
+    for role, cfg in ROLE_CONFIG.items()
+}
+
+BAR_COLORS = [
+    "#E63946",
+    "#F4A261",
+    "#E9C46A",
+    "#2A9D8F",
+    "#457B9D",
+    "#6A4C93",
+]
+
+# ==========================================================
+# Labels
+# ==========================================================
+
+TITLE_COLUMN_RENAME = {
+    "tumour_type": "Tumour Type",
+    "presentation": "Consultation Type",
     "tumorboard_treatment": "Tumour Board Recommendation",
     "tumorboard_primary_treatment": "Tumour Board Primary Recommendation",
 }
 
-# ---------------------------------------------------------------------------
-# Value label mappings (German → English)
-# ---------------------------------------------------------------------------
-
-VALUE_RENAME: dict = {
+VALUE_RENAME = {
     # Tumour types
-    "Ösophagus":  "Oesophagus-Ca",
-    "Pankreas":   "Pancreatic-Ca",
-    "Magen":      "Gastric-Ca",
-    "Kolon":      "Colorectal-Ca",
-    "Leber":      "Hepatobiliary-Ca",
+    "Ösophagus": "Oesophagus-Ca",
+    "Pankreas": "Pancreatic-Ca",
+    "Magen": "Gastric-Ca",
+    "Kolon": "Colorectal-Ca",
+    "Leber": "Hepatobiliary-Ca",
+
     # Consultation type
-    "1":         "First Presentation",
-    "2":         "FUP-Consultation",
+    "1": "First Presentation",
+    "2": "FUP-Consultation",
+
     # Treatment categories
-    "lokale Therapie":  "Local Therapy",
-    "Diagnostik":       "Further Diagnostics",
-    "Endo-Resektion":   "Endoscopic Resection",
-    "Follow-up":              "Active Surveillance",
+    "lokale Therapie": "Local Therapy",
+    "Diagnostik": "Further Diagnostics",
+    "Endo-Resektion": "Endoscopic Resection",
+    "Follow-up": "Active Surveillance",
     "Systematic Therapy": "Systemic Therapy",
 }
 
 # ==========================================================
-# Role mapping (framework prefix)
-# ==========================================================
-
-ROLE_PREFIX_MAP = {
-    "Surgeon": "F3_persona_surgeon",
-    "Oncologist": "F4_persona_medical_oncologist",
-    "Radio-Oncologist": "F5_persona_radiation_oncologist",
-}
-
-ROLES = list(ROLE_PREFIX_MAP.keys())
-
-METHOD_TREATMENT_COLS = {
-    "Simulated Tumorboard": "F1_MDTB_simulation_treatment",
-    "Surgeon": "F3_persona_surgeon_treatment",
-    "Oncologist": "F4_persona_medical_oncologist_treatment",
-    "Radio-Oncologist": "F5_persona_radiation_oncologist_treatment",
-}
-
-# ==========================================================
-# Framework mapping
+# Framework Mapping
 # ==========================================================
 
 FRAMEWORK_PREFIX_MAP = {
@@ -154,77 +221,34 @@ FRAMEWORK_PREFIX_MAP = {
     "self_consistency": "F2_multi_expert_consensus",
 }
 
-# Explicit mapping: (framework_label, role_label, spec_col, pitch_col)
-SIGNAL_COLUMNS = [
-    # F3 - surgeon persona
-    ("F3_persona_surgeon", "Surgeon",
-     "F3_persona_surgeon_domain_content_present",
-     "F3_persona_surgeon_boundary_violation",
-     "F3_persona_surgeon_treatment_concordance"),
-    # F4 - oncologist persona
-    ("F4_persona_medical_oncologist", "Oncologist",
-     "F4_persona_medical_oncologist_domain_content_present",
-     "F4_persona_medical_oncologist_boundary_violation",
-     "F4_persona_medical_oncologist_treatment_concordance"),
-    # F5 - radio-oncologist persona
-    ("F5_persona_radiation_oncologist", "Radio-Oncologist",
-     "F5_persona_radiation_oncologist_domain_content_present",
-     "F5_persona_radiation_oncologist_boundary_violation",
-     "F5_persona_radiation_oncologist_treatment_concordance"),
-]
+# ==========================================================
+# Experimental Metrics Weights
+# ==========================================================
 
-# ---------------------------------------------------------------------------
-# Embedding column definitions
-# ---------------------------------------------------------------------------
-
-# Mapping: readable role name → embedding column in the DataFrame
-EMBEDDING_COLS: dict = {
-    "Surgeon":          "F3_persona_surgeon_embedding",
-    "Oncologist":       "F4_persona_medical_oncologist_embeddings",
-    "Radio-Oncologist": "F5_persona_radiation_oncologist_embeddings",
-    "Simulated Tumorboard": "F1_MDTB_simulation_embeddings",
+CRI_WEIGHTS = {
+    "cosine_similarity": 0.35,
+    "specificity_rate": 0.25,
+    "pitch_control": 0.20,
+    "accuracy": 0.15,
+    "entropy_stability": 0.05,
 }
 
-# Self-consistency embedding columns
-SELF_CONSISTENCY_EMBEDDING_COLS: dict = {
-    "surgeon":          "F2_multi_expert_consensus_surgeon_embeddings",
-    "oncologist":       "F2_multi_expert_consensus_oncologist_embeddings",
-    "radio-oncologist": "F2_multi_expert_consensus_radio-oncologist_embeddings",
-}
-
-
-
-# ---------------------------------------------------------------------------
-# Composite Robustness Index weights
-# (documented in the Methods section of the manuscript)
-# ---------------------------------------------------------------------------
-
-CRI_WEIGHTS: dict = {
-    "cosine_similarity":   0.35,
-    "specificity_rate":    0.25,
-    "pitch_control":       0.20,   # weight applied to (1 - boundary_violation_rate)
-    "accuracy":            0.15,
-    "entropy_stability":   0.05,   # weight applied to (1 - global_entropy)
-}
-
-# Persona Stability Index weights
-PSI_WEIGHTS: dict = {
+PSI_WEIGHTS = {
     "cosine_similarity": 0.40,
-    "specificity_rate":  0.30,
-    "pitch_control":     0.20,   # weight applied to (1 - boundary_violation_rate)
-    "accuracy":          0.10,
+    "specificity_rate": 0.30,
+    "pitch_control": 0.20,
+    "accuracy": 0.10,
 }
 
-# Clinical Risk Penalty weights
-RISK_WEIGHTS: dict = {
+RISK_WEIGHTS = {
     "boundary_violation": 0.60,
-    "non_specificity": 0.40,   # weight applied to (1 - specificity_rate)
+    "non_specificity": 0.40,
 }
 
-# ---------------------------------------------------------------------------
-# Output directories
-# ---------------------------------------------------------------------------
+# ==========================================================
+# Output Paths
+# ==========================================================
 
-OUTPUT_DIR_ROLE:     str = "output"
+OUTPUT_DIR_ROLE: str = "output"
 OUTPUT_DIR_ADVANCED: str = "output/advanced"
 OUTPUT_DIR_IMG_ROLE: str = "output/img"
