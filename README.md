@@ -1,16 +1,28 @@
 # LLM Specialist Role Personas in Oncological Decision Support
 ## Reproducibility Repository
 
-This repository contains the complete analysis code accompanying the manuscript:
+This repository contains the complete analysis and experimental pipeline accompanying the manuscript:
 
 > **"Effect of Specialist Role Personas on LLM Alignment with Multidisciplinary Tumour Board Recommendations in Gastrointestinal Oncology"**
 > *(Submitted for peer review)*
 
 ---
 
-## Study Summary
+## Study Overview
 
-We evaluated whether assigning specialist role personas—Surgeon, Oncologist, and Radio-Oncologist—to a large language model (GPT-4) improves the alignment of its treatment recommendations with institutional multidisciplinary tumour board (MTB) decisions across 5 gastrointestinal cancer types.  Embedding-space analyses were used to quantify whether each persona produces a geometrically distinct, stable clinical identity.
+This study evaluates whether assigning specialist role personas—Surgeon, Medical Oncologist, and Radiation Oncologist—to large language models improves alignment with multidisciplinary tumour board (MTB) treatment recommendations.
+
+The analysis framework combines:
+
+- Clinical agreement evaluation
+- Embedding-space geometric validation
+- Statistical robustness testing
+- Prompt engineering reproducibility experiments
+
+Embedding analyses are used to determine whether different clinical personas induce:
+- Distinct semantic representations
+- Stable role identities in latent space
+- Measurable clinical decision structure separation
 
 ---
 
@@ -21,20 +33,79 @@ We evaluated whether assigning specialist role personas—Surgeon, Oncologist, a
 ├── config.py                         # Centralised constants (colours, column names, weights)
 ├── utils.py                          # Shared utility functions (parsing, statistics, comparisons)
 │
+├── 00_demographics.py                # Dataset population statistics
 ├── 01_agreement_analysis.py          # Agreement rates, Cochran Q, McNemar, Wilson CIs
 ├── 02_embedding_analysis.py          # Cosine similarity, PCA, UMAP, Jensen–Shannon divergence
 ├── 03_persona_stability_analysis.py  # PSI, CRI, boundary entropy, clinical risk score
 ├── 04_advanced_analysis.py           # Confusion matrices, Cohen κ, GEE, correlations
 │
-├── role/                             # Excel outputs (created at runtime)
-├── img/
-│   ├── role/                         # Figures: agreement, treatment distribution
-│   └── advanced/                     # Figures: PCA, UMAP, confusion matrices
+├── data/
+│ ├── anonymized_dataset/ # Study dataset (not publicly distributed)
+│ └── dummy_patients/ # Synthetic reproducibility cases
 │
-└── requirements.txt                  # Python dependencies
+├── prompts/                          # Prompt engineering experimentation module
+│ ├── openai_client.py
+│ ├── prompt_templates.py
+│ ├── run_framework_experiment.py
+│ └── evaluation.md
+│
+├── output/                           # outputs created at runtime
+│
+├── requirements.txt                  # Python dependencies
+└── README.md
+
 ```
 
-> **Note:** The input data file (`Ultima_dataset with embeddings_role_treatment.xlsx`) is **not** included in this repository to protect patient privacy.  A fully de-identified synthetic dataset matching the column schema is available upon request from the corresponding author.
+## Data Availability
+
+The clinical dataset is not included to preserve patient privacy.
+
+Instead:
+
+- A schema-matching synthetic dataset is available for methodological testing.
+- Dummy cases are provided for prompt engineering reproducibility.
+
+See:
+````python
+data/dummy_patients/
+````
+
+These contain:
+
+- German synthetic MTB-style documentation cases
+- Literal English translations for reviewer readability
+
+⚠ The English translations are not experimental inputs.  
+Actual study rewriting and standardisation were performed automatically via prompt pipelines.
+
+---
+
+## Prompts Module
+
+The `prompts/` module enables controlled experimental prompt testing for GPT-based tumour board reasoning.
+
+Purpose:
+- Ensure methodological transparency
+- Isolate prompt engineering effects from clinical dataset effects
+
+Experimental frameworks include:
+
+### Framework 1 — Standard Tumour Board
+Multidisciplinary reasoning with direct treatment recommendation output.
+
+### Framework 2 — Multi-Expert Self-Consistency Reasoning
+The model generates independent reasoning paths for:
+- Surgical oncology
+- Medical oncology
+- Radiation oncology
+
+Then synthesises a consensus decision.
+
+
+### Frameworks 3–5 — Specialist Personas
+Single-specialty clinical perspective prompting.
+
+Configuration requires user-provided API keys.
 
 ---
 
@@ -46,101 +117,177 @@ We evaluated whether assigning specialist role personas—Surgeon, Oncologist, a
 pip install -r requirements.txt
 ```
 
-To enable UMAP visualisations, also install:
+
+
+## Running the Analyses
+
+### 1. Install dependencies
 
 ```bash
-pip install umap-learn
+pip install -r requirements.txt
 ```
 
-### 2. Place the dataset
 
-Copy `Ultima_dataset with embeddings_role_treatment.xlsx` into the repository root.
+### 2. Dataset Placement
 
-### 3. Execute scripts in order
+Place the anonymized dataset in the repository root (already in folder data).
+
+
+### 3. Execution Order
 
 Each script is self-contained and can be run independently, but the standard analysis order is:
 
 ```bash
 python 01_agreement_analysis.py      # ~1 min
-python 02_embedding_analysis.py      # ~2–5 min (longer with UMAP enabled)
-python 03_persona_stability_analysis.py  # ~3 min (bootstrap = 500 iterations)
+python 02_embedding_analysis.py      # ~2 min
+python 03_persona_stability_analysis.py  # ~2 min
 python 04_advanced_analysis.py       # ~2 min
 ```
+---
 
-To enable UMAP, set `DO_UMAP = True` in `config.py`.
+## Core Statistical Methods
+
+### Agreement Evaluation
+
+- Cochran’s Q test  
+- McNemar pairwise testing  
+- Holm–Bonferroni correction  
+- Wilson confidence intervals  
+
+### Embedding Space Analysis
+
+- Pairwise cosine similarity matrices  
+- PCA manifold structural validation  
+- Jensen–Shannon distribution divergence  
+- Centroid geometric separation  
+- Tumour-stratified structural validation  
+
+### Statistical Robustness Testing
+
+- Kruskal–Wallis projection separation testing  
+- Effect size estimation via variance decomposition  
+- Case-level and population-level signal testing  
 
 ---
 
-## Configuration
+## Persona Stability Metrics
 
-All analysis parameters, column mappings, and composite index weights are defined in `config.py`.  Key parameters:
+The study introduces composite clinical robustness metrics.
+
+### Persona Stability Index (PSI)
+
+Measures embedding consistency across clinical contexts.
+
+### Composite Robustness Index (CRI)
+
+Weighted integration of:
+
+- Semantic similarity  
+- Clinical specificity  
+- Decision control signal  
+- Accuracy alignment  
+- Entropy stability  
+
+Weights are defined in `config.py`.
+
+## Experimental Configuration
+
+All analysis parameters are centrally controlled via:
+````python
+config.py
+````
+
+All analysis parameters, column mappings, and composite index weights are defined in `config.py`.
+Key parameters:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `SHOW_PLOTS` | `False` | Display plots interactively |
-| `DO_UMAP` | `False` | Run UMAP dimensionality reduction |
 | `CRI_WEIGHTS` | see file | Composite Robustness Index weights |
 | `PSI_WEIGHTS` | see file | Persona Stability Index weights |
 | `RISK_WEIGHTS` | see file | Clinical Risk Penalty weights |
 
 ---
+## Outputs
 
-## Key Outputs
+Generated outputs include:
 
-| File | Description |
-|------|-------------|
-| `role/overall_agreement_ci.xlsx` | Overall accuracy with 95 % Wilson CIs |
-| `role/ci_by_tumor_type.xlsx` | Stratified accuracy by tumour type |
-| `role/mcnemar_matrix.xlsx` | Pairwise McNemar χ² statistics |
-| `role/holm_bonferroni_results.xlsx` | Holm–Bonferroni corrected p-values |
-| `role/kappa_results.xlsx` | Cohen's κ for all method pairs |
-| `role/similarity_matrix_roles.xlsx` | Mean pairwise cosine similarities |
-| `role/persona_drift_full_analysis.xlsx` | Per-case cosine drift (single vs SC) |
-| `role/persona_stability_index.xlsx` | PSI per role |
-| `role/composite_robustness_index.xlsx` | CRI per role |
-| `role/composite_robustness_bootstrap_ci.xlsx` | Bootstrap 95 % CIs for CRI |
-| `role/clinical_risk_score.xlsx` | Clinical Risk Penalty Score |
-| `role/Analysis_Tables_role.docx` | Word tables for manuscript |
+### Agreement Analysis
 
----
+- Treatment concordance statistics  
+- Inter-method reliability tests  
 
-## Statistical Methods
+### Embedding Analysis
 
-- **Cochran's Q + McNemar** (Holm–Bonferroni corrected): omnibus and pairwise tests for differences in accuracy across methods (matched design).
-- **Wilson score confidence intervals**: 95 % CIs for binomial proportions.
-- **Cohen's κ**: inter-rater agreement for treatment category classification.
-- **Generalised Estimating Equations (GEE)**: accounts for within-patient correlation across role conditions.
-- **Point-biserial correlation**: association between role-specific content / pitch invasion and treatment correctness.
-- **Jensen–Shannon divergence**: symmetric distributional distance between role embedding distributions.
-- **Bootstrap resampling** (n = 500): 95 % CIs for composite indices.
+- Similarity matrices  
+- PCA coordinates and centroids  
+- Jensen–Shannon divergence metrics  
+
+### Stability Analysis
+
+- Persona robustness indices  
+- Bootstrap confidence intervals  
+
+### Advanced Analysis
+
+- Clinical signal correlation testing  
+- Risk score modelling  
 
 ---
 
 ## Requirements
 
-See `requirements.txt`.  Core dependencies:
+Core dependencies:
 
-- Python ≥ 3.9
-- pandas, numpy, scipy, statsmodels
-- scikit-learn
-- matplotlib, seaborn
-- python-docx
-- openpyxl
+- Python ≥ 3.9  
+- pandas  
+- numpy 
+- openai
+- scipy  
+- statsmodels  
+- scikit-learn  
+- matplotlib  
+- seaborn  
+- python-docx  
+- openpyxl  
+
+---
+
+## Reproducibility Protocol
+
+To ensure reproducibility:
+
+- Fix the model version in prompt experiments.  
+- Do not modify prompt templates.  
+- Log raw model outputs before post-processing.  
+- Maintain dataset preprocessing pipeline consistency.  
+
+---
+
+## Ethical Statement
+
+This project is for research purposes only.
+
+⚠ LLM-generated clinical outputs must **not** be used for real patient care.
 
 ---
 
 ## License
 
-MIT License — see `LICENSE` for details.
+MIT License.
+
+See `LICENSE`.
+
+---
 
 ## Citation
 
-If you use this code, please cite:
+If you use this work, please cite:
 
-```
-[Citation will be added upon manuscript acceptance]
-```
+> Citation will be added after peer review acceptance.
+
+---
 
 ## Contact
 
-[Author contact details will be added upon publication]
+Corresponding author contact details will be provided upon publication.
