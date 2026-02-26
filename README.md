@@ -3,8 +3,9 @@
 
 This repository contains the complete analysis and experimental pipeline accompanying the manuscript:
 
-> **"Effect of Specialist Role Personas on LLM Alignment with Multidisciplinary Tumour Board Recommendations in Gastrointestinal Oncology"**
+> **"Role-Based and Ensemble GPT-5 Approaches for Clinical Decision Support in Gastrointestinal Oncology"**
 > *(Submitted for peer review)*
+
 
 ---
 
@@ -58,25 +59,14 @@ Embedding analyses are used to determine whether different clinical personas ind
 
 ## Data Availability
 
-The clinical dataset is not included to preserve patient privacy.
+The `data/` directory contains:
 
-Instead:
+- The anonymized study dataset used for all analyses (fully privacy-preserving).
+- Dummy patient cases (`dummy_patients/`) for reproducibility and prompt execution testing.
 
-- A schema-matching synthetic dataset is available for methodological testing.
-- Dummy cases are provided for prompt engineering reproducibility.
+The anonymized dataset preserves the full analytical structure required to reproduce the results presented in the manuscript.
 
-See:
-````python
-data/dummy_patients/
-````
-
-These contain:
-
-- German synthetic MTB-style documentation cases
-- Literal English translations for reviewer readability
-
-⚠ The English translations are not experimental inputs.  
-Actual study rewriting and standardisation were performed automatically via prompt pipelines.
+Dummy and synthetic materials are provided exclusively for reproducibility, testing, and methodological transparency.
 
 ---
 
