@@ -9,8 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from scipy.stats import pointbiserialr
+from scipy.stats import pointbiserialr, spearmanr
 from sklearn.metrics import cohen_kappa_score
+import seaborn as sns
 
 from config import (
     DATA_FILE,
@@ -26,7 +27,9 @@ from config import (
 # -----------------------------------------------------------
 
 TABLE_DIR = os.path.join(OUTPUT_DIR_ROLE, "advanced_analysis")
+IMG_DIR = os.path.join(OUTPUT_DIR_ROLE, "advanced_analysis/img")
 os.makedirs(TABLE_DIR, exist_ok=True)
+os.makedirs(IMG_DIR, exist_ok=True)
 
 # -----------------------------------------------------------
 # Load Dataset
@@ -269,10 +272,13 @@ for fw_name, role, spec_col, pitch_col, _ in SIGNAL_COLUMNS:
             "percentage": df[pitch_col].mean() * 100
         })
 
+freq_signal_df = pd.DataFrame(freq_rows)
+
 _print_and_save(
-    freq_df,
+    freq_signal_df,
     f"{TABLE_DIR}/frequency_domain_content_pitch.xlsx",
     "=== Signal Frequencies ==="
-)
+
+
 
 print("\n=== Advanced Analysis Complete ===")

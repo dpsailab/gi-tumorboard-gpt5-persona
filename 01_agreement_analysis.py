@@ -17,7 +17,7 @@ Outputs (saved to ``output/agreement_analysis`` and ``output/agreement_analysis/
 
 Statistical tests performed:
   - Cochran's Q (omnibus)
-  - Pairwise McNemar with Holm–Bonferroni correction
+  - Pairwise McNemar
   - Wilson 95 % confidence intervals
 """
 

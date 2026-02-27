@@ -119,6 +119,10 @@ def plot_persona_pca_space(
             roles.append(role)
             tumors.append(tumor_val)
 
+
+    #  NOTE: Sample size thresholds for subgroup analyses were chosen to ensure stable estimation of PCA projections and dispersion metrics, following common exploratory embedding analysis practices.
+    # Subgroups with very small sample sizes may produce unstable centroid and variance estimates. ###
+
     if len(vectors) < 20:
         print("Not enough samples for PCA")
         return
@@ -503,10 +507,19 @@ def run_embedding_analysis(df, embedding_dict, title_prefix, save_prefix):
                 "jsd": d
             })
 
-    pd.DataFrame(js_rows).to_excel(
+
+    js_df = pd.DataFrame(js_rows)
+
+    print("\nJSD pairwise divergence:")
+    print(js_df.round(4).to_string(index=False))
+
+    print(f"\nJSD range: {js_df['jsd'].min():.4f} – {js_df['jsd'].max():.4f}")
+
+    js_df.to_excel(
         f"{TABLE_DIR}/{save_prefix}_jsd.xlsx",
         index=False
     )
+
 
     # ==================================================
     # 4. Centroid separation
@@ -618,12 +631,9 @@ def run_embedding_analysis(df, embedding_dict, title_prefix, save_prefix):
 
         print("\n--- Effect size estimation ---")
 
-        grand_mean = stat_df[["pc1", "pc2"]].mean()
-
-        ss_between = 0
-        ss_total = 0
-
         for pc in ["pc1", "pc2"]:
+
+            ss_between = 0  # RESET for each PC
 
             overall_mean = stat_df[pc].mean()
 
@@ -640,7 +650,7 @@ def run_embedding_analysis(df, embedding_dict, title_prefix, save_prefix):
 
             eta_sq = ss_between / ss_total if ss_total > 0 else np.nan
 
-            print(f"{pc} η² = {eta_sq:.4f}")
+            print(f"{pc.upper()} η² = {eta_sq:.4f}")
 
         # --------------------------------------------------
         # Save statistical PCA dataframe

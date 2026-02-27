@@ -4,7 +4,7 @@
 Patient demographics and cohort characteristics.
 
 This script produces the descriptive statistics reported in Table 1 of the
-manuscript.  It reads directly from the main study dataset (Excel format) and
+manuscript.  It reads directly from the main study dataset and
 maps German column names / values to English labels via the shared config.
 
 Analyses
@@ -70,9 +70,8 @@ COL_SEX          = "gender"        # set to None if not present; also tries "sex
 # ===========================================================================
 # Load data
 # ===========================================================================
-
 def load_data(path: str) -> pd.DataFrame:
-    """Load the main study dataset from Excel."""
+    """Load the main study dataset."""
     df = pd.read_csv(path)
     # Normalise tumour type and consultation labels to English (if needed)
     df[COL_TUMOUR]       = df[COL_TUMOUR].replace(VALUE_RENAME)
@@ -80,7 +79,7 @@ def load_data(path: str) -> pd.DataFrame:
     if COL_TREATMENT in df.columns:
         # Convert string representation of lists into actual Python lists
         df[COL_TREATMENT] = df[COL_TREATMENT].apply(
-            lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith("[") else x
+            lambda x: ast.literal_eval(x) if isinstance(x, str) and x.strip().startswith("[") else x
         )
         # Extract first tumour type (primary classification)
         df[COL_TREATMENT] = df[COL_TREATMENT].apply(
@@ -105,7 +104,7 @@ def _median_iqr(series: pd.Series) -> str:
     med = series.median()
     q1  = series.quantile(0.25)
     q3  = series.quantile(0.75)
-    return f"{med:.1f} ({q1:.0f}–{q3:.0f})"
+    return f"{med:.1f} ({q1:.1f}–{q3:.1f})"
 
 
 # ===========================================================================
@@ -164,7 +163,7 @@ def sex_distribution(df: pd.DataFrame,
     """
     def _counts(subset: pd.DataFrame) -> pd.DataFrame:
         total  = len(subset)
-        counts = subset[sex_col].value_counts()
+        counts = subset[sex_col].dropna().value_counts()
         perc   = subset[sex_col].value_counts(normalize=True) * 100
         out    = pd.concat([counts, perc.round(1)], axis=1)
         out.columns = ["N", "percent"]
@@ -319,8 +318,10 @@ def build_table1(df: pd.DataFrame, sex_col: str = None) -> pd.DataFrame:
                    for t in tumour_types},
             }
 
+    CONSULTATION_ORDER = ["First Presentation", "FUP"]
+
     # ---- Consultation type ----
-    for cons_val in sorted(df[COL_CONSULTATION].dropna().unique()):
+    for cons_val in CONSULTATION_ORDER:
         n_overall = int((df[COL_CONSULTATION] == cons_val).sum())
         rows[f"Consultation — {cons_val}"] = {
             "Overall": _n_pct(n_overall, len(df)),
