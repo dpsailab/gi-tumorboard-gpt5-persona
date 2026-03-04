@@ -84,7 +84,7 @@ from config import (
     CRI_WEIGHTS, DATA_FILE, OUTPUT_DIR_ROLE,
     PSI_WEIGHTS, RISK_WEIGHTS,
     ROLE_PREFIX_MAP, ROLES, SINGLE_REQUEST_EMBEDDING_COLS,
-    SELF_CONSISTENCY_EMBEDDING_COLS, SINGLE_REQUEST_CONCORDANCE_COLS,
+    MULTI_EXPERT_EMBEDDING_COLS, SINGLE_REQUEST_CONCORDANCE_COLS,
     SHOW_PLOTS
 )
 
@@ -374,7 +374,7 @@ def persona_cosine_similarity(df: pd.DataFrame, roles: list) -> pd.DataFrame:
     rows = []
     for role in roles:
         single_col = SINGLE_REQUEST_EMBEDDING_COLS[role]
-        self_col = SELF_CONSISTENCY_EMBEDDING_COLS[role]
+        self_col = MULTI_EXPERT_EMBEDDING_COLS[role]
         if single_col not in df.columns or self_col not in df.columns:
             continue
         sims = []
@@ -464,7 +464,7 @@ def persona_stability_index(df: pd.DataFrame,
         pitch_rates = []
         acc_rates = []
 
-        for fw_pattern in ["single_request", "self_consistency"]:
+        for fw_pattern in ["single_request", "multi_expert"]:
 
             base = f"{fw_pattern}_{role_prefix}"
 

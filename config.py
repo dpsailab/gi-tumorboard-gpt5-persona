@@ -157,7 +157,7 @@ SINGLE_REQUEST_EMBEDDING_COLS = {
 }
 
 # Self-consistency embeddings
-SELF_CONSISTENCY_EMBEDDING_COLS = {
+MULTI_EXPERT_EMBEDDING_COLS = {
     role: f"F2_multi_expert_consensus_{'tumorboard' if role == 'Simulated Tumorboard' else role.lower()}_embeddings"
     for role in ROLE_CONFIG.keys()
 }
@@ -218,7 +218,7 @@ VALUE_RENAME = {
 
 FRAMEWORK_PREFIX_MAP = {
     "single": "F1_MDTB_simulation",
-    "self_consistency": "F2_multi_expert_consensus",
+    "multi_expert": "F2_multi_expert_consensus",
 }
 
 # ==========================================================

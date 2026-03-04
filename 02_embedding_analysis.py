@@ -48,7 +48,7 @@ from config import (
     OUTPUT_DIR_ROLE,
     SHOW_PLOTS,
     SINGLE_REQUEST_EMBEDDING_COLS,
-    SELF_CONSISTENCY_EMBEDDING_COLS,
+    MULTI_EXPERT_EMBEDDING_COLS,
     ROLE_CONFIG
 )
 
@@ -680,9 +680,9 @@ run_embedding_analysis(
 
 run_embedding_analysis(
     df,
-    SELF_CONSISTENCY_EMBEDDING_COLS,
+    MULTI_EXPERT_EMBEDDING_COLS,
     "Self Consistency",
-    "self_consistency"
+    "multi_expert"
 )
 
 
@@ -701,7 +701,7 @@ case_rows = []
 for role in SINGLE_REQUEST_EMBEDDING_COLS.keys():
 
     single_col = SINGLE_REQUEST_EMBEDDING_COLS.get(role)
-    self_col   = SELF_CONSISTENCY_EMBEDDING_COLS.get(role)
+    self_col   = MULTI_EXPERT_EMBEDDING_COLS.get(role)
 
     if single_col is None or self_col is None:
         continue
@@ -766,7 +766,7 @@ if len(drift_df) > 0:
 
     for role, single_col in SINGLE_REQUEST_EMBEDDING_COLS.items():
 
-        self_col = SELF_CONSISTENCY_EMBEDDING_COLS.get(role)
+        self_col = MULTI_EXPERT_EMBEDDING_COLS.get(role)
 
         if self_col is None:
             continue
