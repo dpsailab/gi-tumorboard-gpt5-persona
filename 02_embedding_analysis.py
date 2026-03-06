@@ -2,7 +2,7 @@
 02_embedding_analysis.py
 ========================
 
-Embedding-space analysis (Single Request vs Self-Consistency Personas).
+Embedding-space analysis (Specialist persona vs Multi-expert deliberation).
 
 This pipeline evaluates whether different clinical persona prompting
 strategies produce systematically distinct embedding representations.
@@ -20,8 +20,8 @@ Analyses include:
    - Kruskal–Wallis tests on PCA projections.
    - Effect size estimation via variance decomposition.
 6. Persona drift quantification between:
-   - Single-request persona responses
-   - Self-consistency persona responses
+   - Specialist persona persona responses
+   - Multi-expert deliberation responses
 
 Outputs are stored in:
 ``output/embedding_analysis/``
@@ -47,7 +47,7 @@ from config import (
     DATA_FILE,
     OUTPUT_DIR_ROLE,
     SHOW_PLOTS,
-    SINGLE_REQUEST_EMBEDDING_COLS,
+    SPECIALIST_PERSONA_EMBEDDING_COLS,
     MULTI_EXPERT_EMBEDDING_COLS,
     ROLE_CONFIG
 )
@@ -180,7 +180,7 @@ def plot_persona_pca_space(
                 ax=ax0
             )
 
-    ax0.set_title(f"Overall Persona Space")
+    ax0.set_title(f"Overall")
     ax0.grid()
 
     # -----------------------------
@@ -453,7 +453,7 @@ def run_embedding_analysis(df, embedding_dict, title_prefix, save_prefix):
     plot_persona_pca_space(
         df=df,
         embedding_map=embedding_dict,
-        title=f"{save_prefix} — PCA Persona Space",
+        title=f"{title_prefix} PCA",
         output_path=f"{IMG_DIR}/pca_{save_prefix}_persona_space.png",
         include_tumorboard=True
     )
@@ -673,21 +673,21 @@ def run_embedding_analysis(df, embedding_dict, title_prefix, save_prefix):
 
 run_embedding_analysis(
     df,
-    SINGLE_REQUEST_EMBEDDING_COLS,
-    "Single Request",
-    "single_request"
+    SPECIALIST_PERSONA_EMBEDDING_COLS,
+    "Specialist persona",
+    "specialist_persona"
 )
 
 run_embedding_analysis(
     df,
     MULTI_EXPERT_EMBEDDING_COLS,
-    "Self Consistency",
+    "Multi Expert Deliberation",
     "multi_expert"
 )
 
 
 # ======================================================
-# PERSONA DRIFT SCORE (Single Request vs Self-Consistency)
+# PERSONA DRIFT SCORE (Specialist persona vs Multi-expert deliberation)
 # ======================================================
 
 print("\n=== Persona Drift Score ===")
@@ -698,9 +698,9 @@ case_rows = []
 # Case-level drift
 # ------------------------------------------------------
 
-for role in SINGLE_REQUEST_EMBEDDING_COLS.keys():
+for role in SPECIALIST_PERSONA_EMBEDDING_COLS.keys():
 
-    single_col = SINGLE_REQUEST_EMBEDDING_COLS.get(role)
+    single_col = SPECIALIST_PERSONA_EMBEDDING_COLS.get(role)
     self_col   = MULTI_EXPERT_EMBEDDING_COLS.get(role)
 
     if single_col is None or self_col is None:
@@ -764,7 +764,7 @@ if len(drift_df) > 0:
 
     centroid_drift_rows = []
 
-    for role, single_col in SINGLE_REQUEST_EMBEDDING_COLS.items():
+    for role, single_col in SPECIALIST_PERSONA_EMBEDDING_COLS.items():
 
         self_col = MULTI_EXPERT_EMBEDDING_COLS.get(role)
 

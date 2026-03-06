@@ -61,12 +61,22 @@ Embedding analyses are used to determine whether different clinical personas ind
 
 The `data/` directory contains:
 
-- The anonymized study dataset used for all analyses (fully privacy-preserving).
-- Dummy patient cases (`dummy_patients/`) for reproducibility and prompt execution testing.
-
-The anonymized dataset preserves the full analytical structure required to reproduce the results presented in the manuscript.
-
-Dummy and synthetic materials are provided exclusively for reproducibility, testing, and methodological transparency.
+- **Derived study dataset:** GPT-5 outputs for all six 
+  prompting frameworks, treatment category classifications, 
+  embedding vectors, and MDT reference labels for all 
+  100 cases. This enables full reproduction of all 
+  statistical analyses and figures reported in the 
+  manuscript.
+- **Original clinical vignettes:** The source patient 
+  summaries cannot be distributed due to institutional 
+  data governance constraints, despite anonymization. 
+  Researchers requiring access for replication may 
+  contact the corresponding author.
+- **Dummy patient cases** (`dummy_patients/`): Synthetic 
+  cases matching the input schema, provided for 
+  testing the prompt execution pipeline 
+  (Frameworks 1–5) without requiring patient data 
+  or API access to study outputs.
 
 ---
 
@@ -83,7 +93,7 @@ Experimental frameworks include:
 ### Framework 1 — Standard Tumour Board
 Multidisciplinary reasoning with direct treatment recommendation output.
 
-### Framework 2 — Multi-Expert Self-Consistency Reasoning
+### Framework 2 — Multi-expert deliberation Reasoning
 The model generates independent reasoning paths for:
 - Surgical oncology
 - Medical oncology
@@ -164,21 +174,30 @@ python 04_advanced_analysis.py       # ~2 min
 
 The study introduces composite clinical robustness metrics.
 
-### Persona Stability Index (PSI)
+ ⚠ **Methodological note:** The PSI and CRI are exploratory 
+ composite indices introduced in this study. They have not been 
+ externally validated against independent cohorts or clinical 
+ outcomes. Weights are theory-driven and defined a priori in
+ `config.py`; no data-driven optimisation was performed. 
+ These metrics should be interpreted as descriptive summaries 
+ of multi-dimensional model behaviour within this evaluation 
+ framework, not as generalizable clinical performance measures.
 
-Measures embedding consistency across clinical contexts.
+### Persona Stability Index (PSI)
+A composite index summarising four dimensions of role-specific 
+behavioural consistency: semantic identity preservation 
+(embedding cosine similarity across prompting conditions), 
+role-specific clinical content presence, boundary control 
+(penalising cross-specialty decision leakage), and treatment 
+recommendation accuracy. Weights are defined in `config.py` 
+and justified in the manuscript Supplementary Material.
 
 ### Composite Robustness Index (CRI)
-
-Weighted integration of:
-
-- Semantic similarity  
-- Clinical specificity  
-- Decision control signal  
-- Accuracy alignment  
-- Entropy stability  
-
-Weights are defined in `config.py`.
+Extends the PSI with a global entropy stability penalty term 
+reflecting distributional unpredictability of treatment 
+recommendations across cases. Full construction rationale 
+and sensitivity analysis are provided in the manuscript 
+Supplementary Material.
 
 ## Experimental Configuration
 

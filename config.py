@@ -26,7 +26,7 @@ SHOW_PLOTS: bool = False
 # Data
 # ==========================================================
 
-DATA_FILE: str = "data/LLM_MDTB_dataset_repository.csv"
+DATA_FILE: str = "data/LLM_MDT_dataset_repository.csv"
 
 # ==========================================================
 # Role Registry
@@ -34,7 +34,7 @@ DATA_FILE: str = "data/LLM_MDTB_dataset_repository.csv"
 
 ROLE_CONFIG = {
     "Simulated Tumorboard": {
-        "prefix": "F1_MDTB_simulation",
+        "prefix": "F1_MDT_simulation",
         "color": "#9467bd",
     },
     "Surgeon": {
@@ -93,8 +93,8 @@ ROLE_PREFIX_MAP = {
     for role, cfg in ROLE_CONFIG.items()
 }
 
-# Single-request concordance columns
-SINGLE_REQUEST_CONCORDANCE_COLS = {
+# Specialist persona concordance columns
+SPECIALIST_PERSONA_CONCORDANCE_COLS = {
     role: _concordance_col(cfg["prefix"])
     for role, cfg in ROLE_CONFIG.items()
 }
@@ -105,7 +105,7 @@ SINGLE_REQUEST_CONCORDANCE_COLS = {
 
 COLUMNS_ANSWER = [
     "tumorboard_treatment",
-    "F1_MDTB_simulation",
+    "F1_MDT_simulation",
     "F2_multi_expert_consensus",
     "F3_persona_surgeon",
     "F4_persona_medical_oncologist",
@@ -150,13 +150,13 @@ EMBEDDING_COLS = {
 }
 
 
-# Single-request persona embeddings
-SINGLE_REQUEST_EMBEDDING_COLS = {
+# Specialist persona persona embeddings
+SPECIALIST_PERSONA_EMBEDDING_COLS = {
     role: f"{cfg['prefix']}_embeddings"
     for role, cfg in ROLE_CONFIG.items()
 }
 
-# Self-consistency embeddings
+# Multi-expert deliberation embeddings
 MULTI_EXPERT_EMBEDDING_COLS = {
     role: f"F2_multi_expert_consensus_{'tumorboard' if role == 'Simulated Tumorboard' else role.lower()}_embeddings"
     for role in ROLE_CONFIG.keys()
@@ -217,7 +217,7 @@ VALUE_RENAME = {
 # ==========================================================
 
 FRAMEWORK_PREFIX_MAP = {
-    "single": "F1_MDTB_simulation",
+    "single": "F1_MDT_simulation",
     "multi_expert": "F2_multi_expert_consensus",
 }
 

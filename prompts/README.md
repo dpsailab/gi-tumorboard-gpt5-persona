@@ -63,7 +63,7 @@ No patient data is included in this file.
 | Framework | Description                             | Output Style                     |
 | --------- | --------------------------------------- | -------------------------------- |
 | 1         | Standard multidisciplinary tumor board  | 1–2 sentence German decision     |
-| 2         | Multi-expert self-consistency reasoning | Structured reasoning + consensus |
+| 2         | Multi-expert deliberation reasoning | Structured reasoning + consensus |
 | 3         | Surgical oncologist perspective         | 1–2 sentence German decision     |
 | 4         | Medical oncologist perspective          | 1–2 sentence German decision     |
 | 5         | Radiation oncologist perspective        | 1–2 sentence German decision     |
@@ -78,7 +78,7 @@ Characteristics:
 - No multi-step reasoning output
 - Output: concise German recommendation
 
-### Framework 2 – Multi-Expert Deliberation (Self-Consistency)
+### Framework 2 – Multi-Expert Deliberation
 
 The model generates three independent reasoning paths:
 
@@ -202,7 +202,7 @@ This module is designed for:
 
 - Prompt engineering experiments
 - Specialty role simulation studies
-- Self-consistency evaluation
+- Multi-expert deliberation evaluation
 - Tumor board reasoning analysis
 - Methodological transparency in scientific publications
 

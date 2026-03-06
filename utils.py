@@ -10,7 +10,8 @@ Covers:
   - Treatment comparison (with alternative-treatment support)
   - Confidence-interval computation (Wilson method)
   - Cochran's Q and pairwise McNemar statistical tests
-  - Proportion z-test with Holm–Bonferroni correction
+  - Proportion z-test
+  - Post-hoc power for a McNemar test from observed discordant pairs.
 """
 
 from __future__ import annotations
@@ -395,6 +396,59 @@ def cochran_and_mcnemar(df: pd.DataFrame, comparison_cols: list,
         "cochran": q_res,
         "pairwise_matrix": matrix
     }
+
+
+def mcnemar_power_from_df(df: pd.DataFrame, col1: str, col2: str,
+                           alpha: float = 0.05) -> dict:
+    """
+    Estimate post-hoc power for a McNemar test from observed discordant pairs.
+
+    Power is computed analytically from the observed b and c counts
+    (discordant pairs), using the normal approximation to the McNemar
+    statistic. This is a post-hoc power estimate — it reflects the power
+    the study had to detect the observed effect size, not a prospective
+    sample size calculation.
+
+    Parameters
+    ----------
+    df :
+        DataFrame with binary (0/1) columns col1 and col2.
+    col1, col2 :
+        Column names of the two methods being compared.
+    alpha :
+        Two-sided significance level (default 0.05).
+
+    Returns
+    -------
+    dict
+        Keys: b, c, n_discordant, effect_size, power.
+    """
+    from scipy.stats import norm
+
+    b = int(np.sum((df[col1] == 1) & (df[col2] == 0)))
+    c = int(np.sum((df[col1] == 0) & (df[col2] == 1)))
+    n_discordant = b + c
+
+    if n_discordant == 0:
+        return {"b": b, "c": c, "n_discordant": 0,
+                "effect_size": np.nan, "power": np.nan}
+
+    # Effect size: proportion of discordant pairs favouring col1
+    p_disc = b / n_discordant
+
+    # Non-centrality parameter under H1
+    z_alpha = norm.ppf(1 - alpha / 2)
+    ncp = abs(2 * p_disc - 1) * np.sqrt(n_discordant)
+    power = 1 - norm.cdf(z_alpha - ncp) + norm.cdf(-z_alpha - ncp)
+
+    return {
+        "b": b,
+        "c": c,
+        "n_discordant": n_discordant,
+        "effect_size": round(p_disc, 4),
+        "power": round(float(power), 4)
+    }
+
 
 def parse_treatment_list_column(df: pd.DataFrame,
                                 column: str,

@@ -48,7 +48,8 @@ from utils import (
     calculate_correct_percentages,
     cochran_and_mcnemar,
     wilson_ci,
-    parse_treatment_list_column
+    parse_treatment_list_column,
+    mcnemar_power_from_df
 )
 
 # ---------------------------------------------------------------------------
@@ -77,69 +78,6 @@ df = parse_treatment_list_column(
 
 # Columns to compare against the reference (excluding the reference itself)
 comparison_cols = COLUMNS_ANSWER[1:]
-
-# ---------------------------------------------------------------------------
-# Overall agreement rates
-# ---------------------------------------------------------------------------
-percentages = calculate_correct_percentages(df, comparison_cols, RENAME_DICT)
-counts      = calculate_correct_counts(df, comparison_cols)
-ci_table    = wilson_ci(df, comparison_cols, RENAME_DICT)
-
-print("\n=== Overall Agreement Rates (95 % Wilson CI) ===")
-print(ci_table.to_string(index=False))
-
-ci_table.to_excel(f"{TABLE_DIR}/overall_agreement_ci.xlsx", index=False)
-
-# ---------------------------------------------------------------------------
-# Statistical tests
-# ---------------------------------------------------------------------------
-comp_binary_cols = [f"{c}_treatment_concordance" for c in comparison_cols]
-
-results = cochran_and_mcnemar(df, comp_binary_cols)
-
-print("=== Cochran's Q Test ===")
-q = results["cochran"]
-
-print(
-    f"Q = {q['Q']:.3f}, "
-    f"df = {q['df']}, "
-    f"p = {q['pvalue']:.4f}, "
-    f"reject = {q['reject']}"
-)
-
-print("\n=== Pairwise McNemar Matrix ===")
-print(results["pairwise_matrix"])
-
-results["pairwise_matrix"].to_excel(
-    f"{TABLE_DIR}/mcnemar_matrix.xlsx"
-)
-
-
-# ---------------------------------------------------------------------------
-# Per-tumour Wilson CIs
-# ---------------------------------------------------------------------------
-print("\n=== 95 % CI per Tumour Type (Wilson method) ===")
-ci_by_tumor_rows = []
-for tumor in df["tumour_type"].unique():
-    sub = df[df["tumour_type"] == tumor]
-    n   = len(sub)
-    label = VALUE_RENAME.get(tumor, tumor)
-    for col in comparison_cols:
-        correct = int(sub[f"{col}_treatment_concordance"].sum())
-        p = correct / n if n > 0 else 0.0
-        from statsmodels.stats.proportion import proportion_confint
-        ci_low, ci_high = proportion_confint(correct, n, alpha=0.05, method="wilson")
-        ci_by_tumor_rows.append(dict(
-            tumour=label, model=RENAME_DICT.get(col, col),
-            n=n, correct=correct,
-            proportion=round(p, 4),
-            ci_low=round(ci_low, 4), ci_high=round(ci_high, 4),
-        ))
-
-ci_by_tumor_df = pd.DataFrame(ci_by_tumor_rows)
-ci_by_tumor_df.to_excel(f"{TABLE_DIR}/ci_by_tumor_type.xlsx", index=False)
-print(ci_by_tumor_df.to_string(index=False))
-
 
 # ===========================================================================
 # Visualisation helpers
@@ -263,6 +201,180 @@ def plot_sub_analysis(df: pd.DataFrame, column_name: str,
                  f"{TITLE_COLUMN_RENAME.get(column_name, column_name)} = "
                  f"{label} (N = {len(sub)})")
         plot_overall_bar(perc, rename_dict, title, save_dir)
+
+# ---------------------------------------------------------------------------
+# Overall agreement rates
+# ---------------------------------------------------------------------------
+percentages = calculate_correct_percentages(df, comparison_cols, RENAME_DICT)
+counts      = calculate_correct_counts(df, comparison_cols)
+ci_table    = wilson_ci(df, comparison_cols, RENAME_DICT)
+
+print("\n=== Overall Agreement Rates (95 % Wilson CI) ===")
+print(ci_table.to_string(index=False))
+
+ci_table.to_excel(f"{TABLE_DIR}/overall_agreement_ci.xlsx", index=False)
+
+# ---------------------------------------------------------------------------
+# Statistical tests
+# ---------------------------------------------------------------------------
+comp_binary_cols = [f"{c}_treatment_concordance" for c in comparison_cols]
+
+results = cochran_and_mcnemar(df, comp_binary_cols)
+
+print("=== Cochran's Q Test ===")
+q = results["cochran"]
+
+print(
+    f"Q = {q['Q']:.3f}, "
+    f"df = {q['df']}, "
+    f"p = {q['pvalue']:.4f}, "
+    f"reject = {q['reject']}"
+)
+
+print("\n=== Pairwise McNemar Matrix ===")
+print(results["pairwise_matrix"])
+
+results["pairwise_matrix"].to_excel(
+    f"{TABLE_DIR}/mcnemar_matrix.xlsx"
+)
+
+# ---------------------------------------------------------------------------
+# Post-hoc McNemar power analysis
+# ---------------------------------------------------------------------------
+
+def compute_and_plot_power_matrix(df: pd.DataFrame, comparison_cols: list,
+                                   rename_dict: dict, alpha: float = 0.05,
+                                   save_dir: str = IMG_DIR) -> pd.DataFrame:
+    """
+    Compute post-hoc McNemar power for all pairwise framework comparisons
+    and export as a symmetric matrix (Excel + PNG heatmap).
+
+    Power is estimated analytically from observed discordant pairs.
+    Values reflect the study's post-hoc power to detect the observed
+    effect size at alpha = 0.05 (two-sided), not prospective power.
+
+    Parameters
+    ----------
+    df :
+        DataFrame with binary concordance columns.
+    comparison_cols :
+        List of model base-name columns (without _treatment_concordance suffix).
+    rename_dict :
+        Display label mapping.
+    alpha :
+        Significance level.
+    save_dir :
+        Output directory for PNG figure.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Symmetric power matrix with display labels as index/columns.
+    """
+    concordance_cols = [f"{c}_treatment_concordance" for c in comparison_cols]
+    labels = [rename_dict.get(c, c) for c in comparison_cols]
+    n = len(concordance_cols)
+
+    power_matrix = pd.DataFrame(
+        np.zeros((n, n)),
+        index=labels,
+        columns=labels
+    )
+
+    detail_rows = []
+
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                power_matrix.iloc[i, j] = 1.0
+            elif i < j:
+                res = mcnemar_power_from_df(
+                    df, concordance_cols[i], concordance_cols[j], alpha
+                )
+                power_matrix.iloc[i, j] = res["power"]
+                power_matrix.iloc[j, i] = res["power"]
+                detail_rows.append({
+                    "model_1": labels[i],
+                    "model_2": labels[j],
+                    "b (col1 correct, col2 wrong)": res["b"],
+                    "c (col1 wrong, col2 correct)": res["c"],
+                    "n_discordant": res["n_discordant"],
+                    "effect_size (p_disc)": res["effect_size"],
+                    "post_hoc_power": res["power"]
+                })
+
+    # Save detail table
+    detail_df = pd.DataFrame(detail_rows)
+    detail_df.to_excel(f"{TABLE_DIR}/mcnemar_power_detail.xlsx", index=False)
+    print("\n=== Post-hoc McNemar Power (pairwise) ===")
+    print(detail_df.to_string(index=False))
+
+    # Heatmap
+    fig, ax = plt.subplots(figsize=(10, 8))
+    mask = np.eye(n, dtype=bool)
+    sns.heatmap(
+        power_matrix,
+        annot=True,
+        fmt=".2f",
+        cmap="coolwarm",
+        vmin=0, vmax=1,
+        mask=mask,
+        linewidths=0.5,
+        ax=ax,
+        cbar_kws={"label": "Post-hoc McNemar Power"}
+    )
+    # Diagonal annotation
+    for k in range(n):
+        ax.text(k + 0.5, k + 0.5, "—", ha="center", va="center",
+                fontsize=11, color="white")
+
+    ax.set_title(
+        f"Post-hoc McNemar Power Matrix (α = {alpha}, two-sided)\n"
+        "Power estimated from observed discordant pairs",
+        fontsize=12, pad=12
+    )
+    ax.set_xlabel("Framework", fontsize=11)
+    ax.set_ylabel("Framework", fontsize=11)
+    plt.xticks(rotation=35, ha="right")
+    plt.tight_layout()
+    _save_or_show(f"{save_dir}/mcnemar_power_matrix.png")
+
+    # Save matrix
+    power_matrix.to_excel(f"{TABLE_DIR}/mcnemar_power_matrix.xlsx")
+
+    return power_matrix, detail_df
+
+
+power_matrix, power_detail = compute_and_plot_power_matrix(
+    df, comparison_cols, RENAME_DICT, alpha=0.05
+)
+
+
+# ---------------------------------------------------------------------------
+# Per-tumour Wilson CIs
+# ---------------------------------------------------------------------------
+print("\n=== 95 % CI per Tumour Type (Wilson method) ===")
+ci_by_tumor_rows = []
+for tumor in df["tumour_type"].unique():
+    sub = df[df["tumour_type"] == tumor]
+    n   = len(sub)
+    label = VALUE_RENAME.get(tumor, tumor)
+    for col in comparison_cols:
+        correct = int(sub[f"{col}_treatment_concordance"].sum())
+        p = correct / n if n > 0 else 0.0
+        from statsmodels.stats.proportion import proportion_confint
+        ci_low, ci_high = proportion_confint(correct, n, alpha=0.05, method="wilson")
+        ci_by_tumor_rows.append(dict(
+            tumour=label, model=RENAME_DICT.get(col, col),
+            n=n, correct=correct,
+            proportion=round(p, 4),
+            ci_low=round(ci_low, 4), ci_high=round(ci_high, 4),
+        ))
+
+ci_by_tumor_df = pd.DataFrame(ci_by_tumor_rows)
+ci_by_tumor_df.to_excel(f"{TABLE_DIR}/ci_by_tumor_type.xlsx", index=False)
+print(ci_by_tumor_df.to_string(index=False))
+
 
 # ---------------------------------------------------------------------------
 # Run visualisations
