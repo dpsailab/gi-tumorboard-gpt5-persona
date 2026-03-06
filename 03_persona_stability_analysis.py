@@ -6,7 +6,7 @@ Persona stability, robustness, and clinical boundary-control analysis.
 
 This module quantifies the degree to which each specialist role persona
 maintains semantically and clinically coherent behaviour across prompting
-conditions (single-request vs self-consistency generation paradigms).
+conditions (Specialist persona vs Multi-expert deliberation generation paradigms).
 
 The analysis implements a multi-layer evaluation framework:
 
@@ -83,8 +83,8 @@ import seaborn as sns
 from config import (
     CRI_WEIGHTS, DATA_FILE, OUTPUT_DIR_ROLE,
     PSI_WEIGHTS, RISK_WEIGHTS,
-    ROLE_PREFIX_MAP, ROLES, SINGLE_REQUEST_EMBEDDING_COLS,
-    MULTI_EXPERT_EMBEDDING_COLS, SINGLE_REQUEST_CONCORDANCE_COLS,
+    ROLE_PREFIX_MAP, ROLES, SPECIALIST_PERSONA_EMBEDDING_COLS,
+    MULTI_EXPERT_EMBEDDING_COLS, SPECIALIST_PERSONA_CONCORDANCE_COLS,
     SHOW_PLOTS
 )
 
@@ -192,7 +192,7 @@ def persona_attractor_dispersion(role_vectors: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-role_vectors_single = _build_role_vectors(SINGLE_REQUEST_EMBEDDING_COLS)
+role_vectors_single = _build_role_vectors(SPECIALIST_PERSONA_EMBEDDING_COLS)
 pad_df = persona_attractor_dispersion(role_vectors_single)
 print("\n=== Persona Attractor Dispersion ===")
 print(pad_df.to_string(index=False))
@@ -341,7 +341,7 @@ def role_performance_variability_entropy(
 
 variability_df = role_performance_variability_entropy(
     df,
-    role_map=SINGLE_REQUEST_CONCORDANCE_COLS,
+    role_map=SPECIALIST_PERSONA_CONCORDANCE_COLS,
     min_cases=10
 )
 
@@ -353,12 +353,12 @@ variability_df.to_excel(
     index=False
 )
 # ===========================================================================
-# 4. Single vs Self-consistency cosine similarity
+# 4. Single vs Multi-expert deliberation cosine similarity
 # ===========================================================================
 
 def persona_cosine_similarity(df: pd.DataFrame, roles: list) -> pd.DataFrame:
     """
-    Mean cosine similarity between single-request and self-consistency embeddings.
+    Mean cosine similarity between Specialist persona and Multi-expert deliberation embeddings.
 
     Parameters
     ----------
@@ -373,7 +373,7 @@ def persona_cosine_similarity(df: pd.DataFrame, roles: list) -> pd.DataFrame:
     """
     rows = []
     for role in roles:
-        single_col = SINGLE_REQUEST_EMBEDDING_COLS[role]
+        single_col = SPECIALIST_PERSONA_EMBEDDING_COLS[role]
         self_col = MULTI_EXPERT_EMBEDDING_COLS[role]
         if single_col not in df.columns or self_col not in df.columns:
             continue
@@ -395,7 +395,7 @@ def persona_cosine_similarity(df: pd.DataFrame, roles: list) -> pd.DataFrame:
 
 
 cosine_df = persona_cosine_similarity(df, ROLES)
-print("\n=== Single vs Self-consistency Cosine Similarity ===")
+print("\n=== Single vs Multi-expert deliberation Cosine Similarity ===")
 print(cosine_df.to_string(index=False))
 cosine_df.to_excel(f"{TABLE_DIR}/persona_cosine_similarity.xlsx", index=False)
 
@@ -425,7 +425,7 @@ def persona_stability_index(df: pd.DataFrame,
     Aggregation strategy:
     - Cosine similarity is obtained from embedding-space similarity analysis.
     - Clinical rates are averaged across available experimental frameworks
-      (single-request and self-consistency conditions when available).
+      (Specialist persona and Multi-expert deliberation conditions when available).
 
     Returns
     -------
@@ -464,26 +464,22 @@ def persona_stability_index(df: pd.DataFrame,
         pitch_rates = []
         acc_rates = []
 
-        for fw_pattern in ["single_request", "multi_expert"]:
+        spec_col = f"{role_prefix}_domain_content_present"
+        pitch_col = f"{role_prefix}_boundary_violation"
+        acc_col = f"{role_prefix}_treatment_concordance"
 
-            base = f"{fw_pattern}_{role_prefix}"
+        if spec_col in df.columns:
+            spec_rates.append(df[spec_col].mean())
 
-            spec_col = f"{base}_specific"
-            pitch_col = f"{base}_pitch_invasion"
-            acc_col = f"{base}_comparison"
+        if pitch_col in df.columns:
+            pitch_rates.append(df[pitch_col].mean())
 
-            if spec_col in df.columns:
-                spec_rates.append(df[spec_col].mean())
+        if acc_col in df.columns:
+            acc_rates.append(df[acc_col].mean())
 
-            if pitch_col in df.columns:
-                pitch_rates.append(df[pitch_col].mean())
-
-            if acc_col in df.columns:
-                acc_rates.append(df[acc_col].mean())
-
-        spec_rate = np.nanmean(spec_rates)
-        pitch_rate = np.nanmean(pitch_rates)
-        accuracy = np.nanmean(acc_rates)
+        spec_rate = df[spec_col].mean() if spec_col in df.columns else np.nan
+        pitch_rate = df[pitch_col].mean() if pitch_col in df.columns else np.nan
+        accuracy = df[acc_col].mean() if acc_col in df.columns else np.nan
 
         psi = (
             PSI_WEIGHTS["cosine_similarity"] * (0 if np.isnan(cos_sim) else cos_sim) +
@@ -537,7 +533,7 @@ def composite_robustness_index(df: pd.DataFrame,
     - Identity stability quantifies semantic consistency across prompting paradigms.
     - Specificity rate measures domain-focused clinical reasoning.
     - Boundary control penalises cross-specialty decision leakage.
-    - Treatment accuracy measures alignment with MDTB reference decisions.
+    - Treatment accuracy measures alignment with MDT reference decisions.
     - Entropy stability penalises unpredictable clinical decision behaviour.
 
     Entropy penalty is computed using the global mean treatment entropy across cases.
@@ -574,9 +570,9 @@ def composite_robustness_index(df: pd.DataFrame,
         pitch_col = f"{role_prefix}_boundary_violation"
         acc_col = f"{role_prefix}_treatment_concordance"
 
-        spec = df[spec_col].mean() if spec_col in df.columns else 0
-        pitch = df[pitch_col].mean() if pitch_col in df.columns else 0
-        acc = df[acc_col].mean() if acc_col in df.columns else 0
+        spec = df[spec_col].mean() if spec_col in df.columns else np.nan
+        pitch = df[pitch_col].mean() if pitch_col in df.columns else np.nan
+        acc = df[acc_col].mean() if acc_col in df.columns else np.nan
 
         cri = (
             CRI_WEIGHTS["cosine_similarity"] * (0 if np.isnan(cos_sim) else cos_sim) +

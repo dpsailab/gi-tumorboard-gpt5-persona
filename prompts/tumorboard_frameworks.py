@@ -8,7 +8,7 @@ Framework 1:
 
 Framework 2:
     Multi-Expert Deliberation with Consensus Synthesis
-    (Self-consistency reasoning with 3 independent specialty paths)
+    (Multi-expert deliberation reasoning with 3 independent specialty paths)
 
 Framework 3:
     Single Specialist – Surgical Oncologist
@@ -42,7 +42,7 @@ FRAMEWORK_1_USER_PROMPT = """What is your decision as a Tumorboard? If a clinica
 
 FRAMEWORK_2_SYSTEM_PROMPT = """You are a multidisciplinary oncological Board including surgeons, medical oncologists, radiation oncologists that has to decide the next therapeutic step for the following patient.
 
-Use self-consistency reasoning. Generate three independent reasoning paths representing:
+Use Multi-expert deliberation reasoning. Generate three independent reasoning paths representing:
 1) a surgeon,
 2) a medical oncologist,
 3) a radiation oncologist.
@@ -54,7 +54,7 @@ Present in German as:
 1. <surgeon>Surgeon reasoning path</surgeon>
 2. <onco>Oncologist reasoning path</onco>
 3. <radioonco>Radiooncologist reasoning path</radioonco>
-4. <tumorboard>Final tumor-board consensus based on self-consistency</tumorboard>
+4. <tumorboard>Final tumor-board consensus based on Multi-expert deliberation</tumorboard>
 
 All patient information is enclosed in triple single quotation marks (''' ''')."""
 
@@ -69,9 +69,9 @@ FRAMEWORK_2_USER_PROMPT = """What is your decision as a Tumorboard? If a clinica
 # FRAMEWORKS 3–5: SINGLE SPECIALIST ROLE PROMPTS
 # =============================================================================
 
-SINGLE_SPECIALIST_SYSTEM_PROMPT = """You are a {role} that has to decide the next therapeutic step for the following patient. All the informations about the patient are in triple single quotation marks (''' ''')."""
+SPECIALIST_PERSONA_SYSTEM_PROMPT = """You are a {role} that has to decide the next therapeutic step for the following patient. All the informations about the patient are in triple single quotation marks (''' ''')."""
 
-SINGLE_SPECIALIST_USER_PROMPT = """What is your decision as a {role}? If a clinical question ('Fragestellung') is present answer precisely to it. Otherwise answer based on your knowledge. You can't suggest to present the case to a tumorboard or a new multidisciplinary discussion, you have to clearly make a decision. Answer in german, in one or two sentences, explaining your decision.
+SPECIALIST_PERSONA_USER_PROMPT = """What is your decision as a {role}? If a clinical question ('Fragestellung') is present answer precisely to it. Otherwise answer based on your knowledge. You can't suggest to present the case to a tumorboard or a new multidisciplinary discussion, you have to clearly make a decision. Answer in german, in one or two sentences, explaining your decision.
 
 ### Actual Case:
 
@@ -136,8 +136,8 @@ def get_prompts_for_framework(
         role = ROLE_MAPPING[framework_type]
 
         return {
-            "system_prompt": SINGLE_SPECIALIST_SYSTEM_PROMPT.format(role=role),
-            "user_prompt": SINGLE_SPECIALIST_USER_PROMPT.format(
+            "system_prompt": SPECIALIST_PERSONA_SYSTEM_PROMPT.format(role=role),
+            "user_prompt": SPECIALIST_PERSONA_USER_PROMPT.format(
                 role=role,
                 case_text=case_text
             ),

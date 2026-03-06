@@ -87,34 +87,41 @@ def _pointbiserial_safe(x, y):
 
 print("\n=== A. Confusion matrices ===")
 
-for diag in df["tumour_type"].dropna().unique():
+output_path = f"{TABLE_DIR}/confusion_matrices_all.xlsx"
 
-    sub = df[df["tumour_type"] == diag]
+with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
 
-    ref_series = sub[f"{REFERENCE_TREATMENT_COL}"].fillna("MISSING")
+    for diag in df["tumour_type"].dropna().unique():
 
-    for role, col in METHOD_TREATMENT_COLS.items():
+        sub = df[df["tumour_type"] == diag]
+        ref_series = sub[REFERENCE_TREATMENT_COL].fillna("MISSING")
 
-        if col not in df.columns:
-            continue
+        for role, col in METHOD_TREATMENT_COLS.items():
 
-        y_pred = sub[col].fillna("MISSING")
+            if col not in df.columns:
+                continue
 
-        cm = pd.crosstab(
-            ref_series,
-            y_pred,
-            rownames=["Tumor Board"],
-            colnames=[role]
-        )
+            y_pred = sub[col].fillna("MISSING")
 
-        fname = f"{TABLE_DIR}/confusion_{diag}_{role}.xlsx".replace("/", "-")
+            cm = pd.crosstab(
+                ref_series,
+                y_pred,
+                rownames=["Tumor Board"],
+                colnames=[role]
+            )
 
-        _print_and_save_cm(
-            cm,
-            fname,
-            f"Confusion Matrix | Tumour={diag} | Role={role}"
-        )
+            # Sheet names: max 31 chars (Excel limit)
+            # e.g. "Colorectal_Surgeon"
+            sheet_name = f"{diag}_{role}"[:31]
 
+            print(f"\nConfusion Matrix - {diag}_{role}")
+            print(cm.to_string())
+
+            cm.to_excel(writer, sheet_name=sheet_name)
+
+            print(f"  Sheet written: {sheet_name}")
+
+print(f"\nAll confusion matrices saved → {output_path}")
 print("Confusion matrices complete.")
 
 # ===========================================================
@@ -278,7 +285,7 @@ _print_and_save(
     freq_signal_df,
     f"{TABLE_DIR}/frequency_domain_content_pitch.xlsx",
     "=== Signal Frequencies ==="
-
+)
 
 
 print("\n=== Advanced Analysis Complete ===")
