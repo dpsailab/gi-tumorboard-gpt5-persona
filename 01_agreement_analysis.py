@@ -49,7 +49,7 @@ from utils import (
     cochran_and_mcnemar,
     wilson_ci,
     parse_treatment_list_column,
-    mcnemar_power_from_df
+    mcnemar_power_from_df, run_mcnemar
 )
 
 # ---------------------------------------------------------------------------
@@ -217,6 +217,7 @@ ci_table.to_excel(f"{TABLE_DIR}/overall_agreement_ci.xlsx", index=False)
 # ---------------------------------------------------------------------------
 # Statistical tests
 # ---------------------------------------------------------------------------
+import itertools
 comp_binary_cols = [f"{c}_treatment_concordance" for c in comparison_cols]
 
 results = cochran_and_mcnemar(df, comp_binary_cols)
@@ -232,11 +233,48 @@ print(
 )
 
 print("\n=== Pairwise McNemar Matrix ===")
-print(results["pairwise_matrix"])
+print(results["pairwise_matrix"].to_string())
 
 results["pairwise_matrix"].to_excel(
     f"{TABLE_DIR}/mcnemar_matrix.xlsx"
 )
+
+# ---------------------------------------------------------------------------
+# Supplementary Table S2: Pairwise McNemar tests (b, c, raw p)
+# ---------------------------------------------------------------------------
+
+METHOD_LABELS = {
+    "F1_MDTB_simulation_treatment_concordance":                    "Sim. Tumour Board",
+    "F2_multi_expert_consensus_tumorboard_treatment_concordance":  "Multi-expert Delib.",
+    "F3_persona_surgeon_treatment_concordance":                    "Surgical Oncologist",
+    "F4_persona_medical_oncologist_treatment_concordance":         "Medical Oncologist",
+    "F5_persona_radiation_oncologist_treatment_concordance":       "Radiation Oncologist",
+    "F6_majority_vote_treatment_concordance":                      "Majority Vote",
+}
+
+s2_rows = []
+
+for c1, c2 in itertools.combinations(comp_binary_cols, 2):
+
+    power_res = mcnemar_power_from_df(df, c1, c2, alpha=0.05)
+    mcnemar_res = run_mcnemar(df, c1, c2, alpha=0.05)
+
+    s2_rows.append({
+        "Comparison":  f"{METHOD_LABELS.get(c1, c1)} vs {METHOD_LABELS.get(c2, c2)}",
+        "b":           power_res["b"],
+        "c":           power_res["c"],
+        "n_discordant": power_res["n_discordant"],
+        "chi2":        round(mcnemar_res["statistic"], 3),
+        "Raw p":       round(mcnemar_res["pvalue"], 3),
+    })
+
+s2_df = pd.DataFrame(s2_rows)
+
+s2_df.to_excel(f"{TABLE_DIR}/supp_table_S2_mcnemar_pairwise.xlsx", index=False)
+
+print("\n=== Supplementary Table S2: Pairwise McNemar Tests ===")
+print(s2_df.to_string(index=False))
+input('hey')
 
 # ---------------------------------------------------------------------------
 # Post-hoc McNemar power analysis

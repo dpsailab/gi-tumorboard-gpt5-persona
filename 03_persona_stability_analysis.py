@@ -85,6 +85,8 @@ from config import (
     PSI_WEIGHTS, RISK_WEIGHTS,
     ROLE_PREFIX_MAP, ROLES, SPECIALIST_PERSONA_EMBEDDING_COLS,
     MULTI_EXPERT_EMBEDDING_COLS, SPECIALIST_PERSONA_CONCORDANCE_COLS,
+    SPECIALIST_DOMAIN_COLS, SPECIALIST_BOUNDARY_COLS,
+    MULTI_EXPERT_DOMAIN_COLS, MULTI_EXPERT_BOUNDARY_COLS,
     SHOW_PLOTS
 )
 
@@ -141,8 +143,156 @@ df = pd.read_csv(DATA_FILE)
 from config import COLUMNS_ANSWER
 comparison_cols = COLUMNS_ANSWER[1:]
 
+
+# ===========================================================
+# 1. Domain / Boundary comparison table
+# ===========================================================
+
+rows = []
+
+for role in ROLES:
+
+    if role != "Simulated Tumorboard":
+        # Specialist persona
+        spec_domain_col = SPECIALIST_DOMAIN_COLS.get(role)
+        spec_boundary_col = SPECIALIST_BOUNDARY_COLS.get(role)
+
+        # Multi expert
+        multi_domain_col = MULTI_EXPERT_DOMAIN_COLS.get(role)
+        multi_boundary_col = MULTI_EXPERT_BOUNDARY_COLS.get(role)
+
+        rows.append({
+
+            "role": role,
+
+            "specialist_domain_sum":
+                df[spec_domain_col].sum()
+                if spec_domain_col in df.columns else np.nan,
+
+            "specialist_boundary_sum":
+                df[spec_boundary_col].sum()
+                if spec_boundary_col in df.columns else np.nan,
+
+            "multi_expert_domain_sum":
+                df[multi_domain_col].sum()
+                if multi_domain_col in df.columns else np.nan,
+
+            "multi_expert_boundary_sum":
+                df[multi_boundary_col].sum()
+                if multi_boundary_col in df.columns else np.nan,
+
+        })
+
+domain_boundary_comparison_df = pd.DataFrame(rows)
+
+print("\n=== Domain Content & Boundary Violation Comparison ===")
+print(domain_boundary_comparison_df.to_string(index=False))
+
+domain_boundary_comparison_df.to_excel(
+    f"{TABLE_DIR}/domain_boundary_framework_comparison.xlsx",
+    index=False
+)
+
+# ===========================================================
+# 1 bis. Prepare data for plotting
+# ===========================================================
+
+plot_rows = []
+
+for _, row in domain_boundary_comparison_df.iterrows():
+
+    role = row["role"]
+
+    plot_rows.append({
+        "role": role,
+        "framework": "Specialist persona",
+        "metric": "Domain content",
+        "count": row["specialist_domain_sum"]
+    })
+
+    plot_rows.append({
+        "role": role,
+        "framework": "Specialist persona",
+        "metric": "Boundary violation",
+        "count": row["specialist_boundary_sum"]
+    })
+
+    plot_rows.append({
+        "role": role,
+        "framework": "Multi-expert",
+        "metric": "Domain content",
+        "count": row["multi_expert_domain_sum"]
+    })
+
+    plot_rows.append({
+        "role": role,
+        "framework": "Multi-expert",
+        "metric": "Boundary violation",
+        "count": row["multi_expert_boundary_sum"]
+    })
+
+plot_df = pd.DataFrame(plot_rows)
+
+
+### ===========================================================
+### Plot comparison
+### ===========================================================
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+palette = [
+    "#F6AE2D",
+    "#2E4057",
+]
+plt.rcParams['axes.prop_cycle'] = plt.cycler(color=palette)
+
+frameworks = ["Specialist persona", "Multi-expert"]
+
+for ax, framework in zip(axes, frameworks):
+
+    subset = plot_df[plot_df["framework"] == framework]
+
+    sns.barplot(
+        data=subset,
+        x="role",
+        y="count",
+        hue="metric",
+        ax=ax
+    )
+
+    ax.set_title(framework)
+    ax.set_ylabel("Count (out of 100)")
+    ax.set_xlabel("Role")
+
+    # Add value labels
+    for container in ax.containers:
+        ax.bar_label(container, fmt='%d', padding=3)
+
+# -----------------------------------------------------------
+# Single legend outside the right subplot
+# -----------------------------------------------------------
+
+handles, labels = axes[1].get_legend_handles_labels()
+
+# Remove both internal legends
+axes[0].legend_.remove()
+axes[1].legend_.remove()
+
+fig.legend(
+    handles,
+    labels,
+    title="Metric",
+    loc="center left",
+    bbox_to_anchor=(1.02, 0.5)
+)
+
+plt.tight_layout()
+
+plot_path = f"{IMG_DIR}/domain_boundary_framework_comparison.png"
+
+_save_or_show(plot_path)
+
 # ===========================================================================
-# 1. Persona Attractor Dispersion
+# 2. Persona Attractor Dispersion
 # ===========================================================================
 
 def persona_attractor_dispersion(role_vectors: dict) -> pd.DataFrame:
@@ -200,7 +350,7 @@ pad_df.to_excel(f"{TABLE_DIR}/persona_attractor_dispersion.xlsx", index=False)
 
 
 # ===========================================================================
-# 2. Role Confusion Entropy (embedding space)
+# 3. Role Confusion Entropy (embedding space)
 # ===========================================================================
 
 def role_confusion_entropy(role_vectors: dict) -> pd.DataFrame:
@@ -244,7 +394,7 @@ rce_df.to_excel(f"{TABLE_DIR}/role_confusion_entropy.xlsx", index=False)
 
 
 # ===========================================================================
-# 3. Role Performance Variability Entropy (Single Persona Framework)
+# 4. Role Performance Variability Entropy (Single Persona Framework)
 # ===========================================================================
 
 def role_performance_variability_entropy(
@@ -353,7 +503,7 @@ variability_df.to_excel(
     index=False
 )
 # ===========================================================================
-# 4. Single vs Multi-expert deliberation cosine similarity
+# 5. Single vs Multi-expert deliberation cosine similarity
 # ===========================================================================
 
 def persona_cosine_similarity(df: pd.DataFrame, roles: list) -> pd.DataFrame:
@@ -401,7 +551,7 @@ cosine_df.to_excel(f"{TABLE_DIR}/persona_cosine_similarity.xlsx", index=False)
 
 
 # ===========================================================================
-# Persona Stability Index (Backwards compatible with legacy pipeline)
+# 6. Persona Stability Index (Backwards compatible with legacy pipeline)
 # ===========================================================================
 
 def persona_stability_index(df: pd.DataFrame,
@@ -509,7 +659,7 @@ print(psi_df.to_string(index=False))
 
 
 # ===========================================================================
-# Composite Robustness Index (Legacy Paper Version)
+# 7. Composite Robustness Index (Legacy Paper Version)
 # ===========================================================================
 
 def composite_robustness_index(df: pd.DataFrame,
@@ -602,7 +752,7 @@ print(cri_df.to_string(index=False))
 
 
 # ===========================================================================
-# 7. Boundary Violation Entropy
+# 8. Boundary Violation Entropy
 # ===========================================================================
 
 def boundary_violation_entropy(df: pd.DataFrame) -> pd.DataFrame:
@@ -666,7 +816,7 @@ print(boundary_df.to_string(index=False))
 
 
 # ===========================================================================
-# 8. Clinical Risk Penalty Score
+# 9. Clinical Risk Penalty Score
 # ===========================================================================
 
 def clinical_risk_penalty(df: pd.DataFrame) -> pd.DataFrame:
@@ -726,7 +876,7 @@ risk_df.to_excel(
 
 
 # ===========================================================================
-# 9. Summary table — one row per role, all key metrics
+# 10. Summary table — one row per role, all key metrics
 # ===========================================================================
 
 summary_rows = []

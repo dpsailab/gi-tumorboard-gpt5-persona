@@ -162,7 +162,43 @@ MULTI_EXPERT_EMBEDDING_COLS = {
     for role in ROLE_CONFIG.keys()
 }
 
+# ===========================================================
+# Helper: derive metric columns from embedding column names
+# ===========================================================
 
+def replace_suffix(col_name: str, new_suffix: str) -> str:
+    """
+    Replace the '_embeddings' suffix with another metric suffix.
+    """
+    return col_name.replace("_embeddings", new_suffix)
+
+# ===========================================================
+# Specialist persona metric column maps
+# ===========================================================
+
+SPECIALIST_DOMAIN_COLS = {
+    role: f"{ROLE_CONFIG[role]['prefix']}_domain_content_present"
+    for role in ROLE_CONFIG
+}
+
+SPECIALIST_BOUNDARY_COLS = {
+    role: f"{ROLE_CONFIG[role]['prefix']}_boundary_violation"
+    for role in ROLE_CONFIG
+}
+
+# ===========================================================
+# Multi-expert metric column maps
+# ===========================================================
+
+MULTI_EXPERT_DOMAIN_COLS = {
+    role: replace_suffix(col, "_domain_content_present")
+    for role, col in MULTI_EXPERT_EMBEDDING_COLS.items()
+}
+
+MULTI_EXPERT_BOUNDARY_COLS = {
+    role: replace_suffix(col, "_boundary_violation")
+    for role, col in MULTI_EXPERT_EMBEDDING_COLS.items()
+}
 # ==========================================================
 # Visualization Styling
 # ==========================================================
