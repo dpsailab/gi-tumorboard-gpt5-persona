@@ -267,10 +267,7 @@ for ax, framework in zip(axes, frameworks):
     for container in ax.containers:
         ax.bar_label(container, fmt='%d', padding=3)
 
-# -----------------------------------------------------------
 # Single legend outside the right subplot
-# -----------------------------------------------------------
-
 handles, labels = axes[1].get_legend_handles_labels()
 
 # Remove both internal legends
@@ -1101,5 +1098,153 @@ for i, eps in enumerate(eps_grid):
 
 print("\n=== Sensitivity Analysis Complete ===")
 
+
+# ===========================================================================
+# 11. Combination Analysis (specific × pitch × correctness)
+# ===========================================================================
+
+print("\n=== Combination Analysis: Content × Boundary × Correctness ===")
+
+from config import (
+    SPECIALIST_DOMAIN_COLS, SPECIALIST_BOUNDARY_COLS,
+    MULTI_EXPERT_DOMAIN_COLS, MULTI_EXPERT_BOUNDARY_COLS,
+    SPECIALIST_PERSONA_CONCORDANCE_COLS,
+)
+
+# Correctness for Multi-Expert is always the ensemble column
+MULTI_EXPERT_CORRECT_COL = "F2_multi_expert_consensus_tumorboard_treatment_concordance"
+
+FRAMEWORK_CONFIGS = {
+    "Specialist Persona": {
+        "domain":    SPECIALIST_DOMAIN_COLS,
+        "boundary":  SPECIALIST_BOUNDARY_COLS,
+        "correct":   SPECIALIST_PERSONA_CONCORDANCE_COLS,
+    },
+    "Multi-Expert": {
+        "domain":    MULTI_EXPERT_DOMAIN_COLS,
+        "boundary":  MULTI_EXPERT_BOUNDARY_COLS,
+        "correct":   {role: MULTI_EXPERT_CORRECT_COL for role in ROLES},
+    },
+}
+
+CATEGORIES = {
+    "Role-specific only":      lambda rs, pi: (rs == 1) & (pi == 0),
+    "Cross-disciplinary only": lambda rs, pi: (rs == 0) & (pi == 1),
+    "Both":                    lambda rs, pi: (rs == 1) & (pi == 1),
+    "Neither":                 lambda rs, pi: (rs == 0) & (pi == 0),
+}
+
+combo_rows = []
+
+for fw_name, cols in FRAMEWORK_CONFIGS.items():
+
+    for role in ROLES:
+
+        if role == "Simulated Tumorboard":
+            continue
+
+        spec_col    = cols["domain"].get(role)
+        pitch_col   = cols["boundary"].get(role)
+        correct_col = cols["correct"].get(role) if isinstance(cols["correct"], dict) else cols["correct"]
+
+        missing = [c for c in [spec_col, pitch_col, correct_col] if c not in df.columns]
+        if missing:
+            print(f"  Skipping {fw_name} | {role}: missing columns: {missing}")
+            continue
+
+        rs  = df[spec_col].fillna(0).astype(int)
+        pi  = df[pitch_col].fillna(0).astype(int)
+        cor = df[correct_col].fillna(0).astype(int)
+
+        for cat, mask_fn in CATEGORIES.items():
+            mask      = mask_fn(rs, pi)
+            n         = int(mask.sum())
+            n_correct = int(cor[mask].sum()) if n > 0 else 0
+            acc       = round(n_correct / n * 100, 1) if n > 0 else np.nan
+
+            combo_rows.append({
+                "framework":    fw_name,
+                "role":         role,
+                "category":     cat,
+                "n":            n,
+                "n_correct":    n_correct,
+                "accuracy_pct": acc,
+            })
+
+combo_df = pd.DataFrame(combo_rows)
+combo_df.to_excel(f"{TABLE_DIR}/combo_analysis.xlsx", index=False)
+print(combo_df.to_string(index=False))
+
+# ---------------------------------------------------------------------------
+# Distribution summary per framework
+# ---------------------------------------------------------------------------
+
+ROLE_ORDER     = [r for r in ROLES if r != "Simulated Tumorboard"]
+CATEGORY_ORDER = list(CATEGORIES.keys())
+N_PER_ROLE     = 100
+N_TOTAL        = N_PER_ROLE * len(ROLE_ORDER)
+
+for fw_name in FRAMEWORK_CONFIGS:
+
+    fw_combo = combo_df[combo_df["framework"] == fw_name]
+
+    print(f"\n--- Distribution ({fw_name}) ---")
+
+    dist_rows = []
+    for cat in CATEGORY_ORDER:
+        row     = {"Category": cat}
+        total_n = 0
+        for role in ROLE_ORDER:
+            subset = fw_combo[(fw_combo["category"] == cat) & (fw_combo["role"] == role)]
+            n      = int(subset["n"].values[0]) if len(subset) > 0 else 0
+            row[role] = f"{n} ({round(n / N_PER_ROLE * 100, 1)}%)"
+            total_n  += n
+        row["Overall"] = f"{total_n} ({round(total_n / N_TOTAL * 100, 1)}%)"
+        dist_rows.append(row)
+
+    dist_df = pd.DataFrame(dist_rows)
+    print(dist_df.to_string(index=False))
+    dist_df.to_excel(
+        f"{TABLE_DIR}/combo_distribution_{fw_name.replace(' ', '_').lower()}.xlsx",
+        index=False
+    )
+
+    # -------------------------------------------------------------------------
+    # Accuracy summary per framework
+    # -------------------------------------------------------------------------
+
+    print(f"\n--- Accuracy per category ({fw_name}) ---")
+
+    acc_rows = []
+    for cat in CATEGORY_ORDER:
+        row           = {"Category": cat}
+        total_correct = 0
+        total_n       = 0
+        for role in ROLE_ORDER:
+            subset = fw_combo[(fw_combo["category"] == cat) & (fw_combo["role"] == role)]
+            if len(subset) == 0:
+                row[role] = "—"
+                continue
+            n         = int(subset["n"].values[0])
+            n_correct = int(subset["n_correct"].values[0])
+            acc       = subset["accuracy_pct"].values[0]
+            if n == 0 or np.isnan(acc):
+                row[role] = "—"
+            else:
+                row[role]      = f"{n_correct}/{n} ({acc}%)"
+                total_correct += n_correct
+                total_n       += n
+        row["Overall"] = (
+            f"{total_correct}/{total_n} ({round(total_correct / total_n * 100, 1)}%)"
+            if total_n > 0 else "—"
+        )
+        acc_rows.append(row)
+
+    acc_df = pd.DataFrame(acc_rows)
+    print(acc_df.to_string(index=False))
+    acc_df.to_excel(
+        f"{TABLE_DIR}/combo_accuracy_{fw_name.replace(' ', '_').lower()}.xlsx",
+        index=False
+    )
 
 print("\n=== Persona Stability Analysis Complete ===")

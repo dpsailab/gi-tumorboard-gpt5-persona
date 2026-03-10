@@ -9,7 +9,7 @@ aggregation scheme against the reference standard defined by the institutional
 multidisciplinary tumour board (MTB) record (``tumorboard_treatment``).
 
 Outputs (saved to ``output/agreement_analysis`` and ``output/agreement_analysis/img``):
-  - Overall and stratified agreement rates (Excel)
+  - Overall and stratified concordance rates (Excel)
   - Bar charts per condition (PNG, 300 dpi)
   - Comparison heatmap (PNG)
   - Treatment summary table by diagnosis (Excel)
@@ -22,6 +22,7 @@ Statistical tests performed:
 """
 
 import os
+import itertools
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -121,7 +122,7 @@ def plot_concordance_heatmap(df: pd.DataFrame, comparison_cols: list,
     )
     plt.xlabel("Model", fontsize=11)
     plt.ylabel("Case Index", fontsize=11)
-    plt.title("Agreement Heatmap: Correct (green) vs Incorrect (red)", fontsize=13)
+    plt.title("Concordance Heatmap: Correct (green) vs Incorrect (red)", fontsize=13)
     plt.xticks(
         ticks=np.arange(len(comparison_cols)) + 0.5,
         labels=[RENAME_DICT.get(c, c) for c in comparison_cols],
@@ -133,7 +134,7 @@ def plot_concordance_heatmap(df: pd.DataFrame, comparison_cols: list,
 def plot_overall_bar(percentages: dict, rename_dict: dict,
                      title: str, save_dir: str) -> None:
     """
-    Grouped bar chart of overall agreement rates with percentage annotations.
+    Grouped bar chart of overall concordance rates with percentage annotations.
 
     Parameters
     ----------
@@ -162,7 +163,7 @@ def plot_overall_bar(percentages: dict, rename_dict: dict,
         )
 
     ax.set_xlabel("Model / Framework", fontsize=11)
-    ax.set_ylabel("Agreement Rate (%)", fontsize=11)
+    ax.set_ylabel("Concordance Rate (%)", fontsize=11)
     ax.set_title(title, fontsize=13)
     ax.set_ylim(0, 115)
     plt.xticks(rotation=35, ha="right")
@@ -176,7 +177,7 @@ def plot_sub_analysis(df: pd.DataFrame, column_name: str,
                       comparison_cols: list, rename_dict: dict,
                       save_dir: str) -> None:
     """
-    Produce one agreement-rate bar chart per unique category in *column_name*.
+    Produce one concordance-rate bar chart per unique category in *column_name*.
 
     Parameters
     ----------
@@ -197,19 +198,19 @@ def plot_sub_analysis(df: pd.DataFrame, column_name: str,
             continue
         perc = calculate_correct_percentages(sub, comparison_cols, rename_dict)
         label = VALUE_RENAME.get(value, value)
-        title = (f"Agreement Rate — "
+        title = (f"Concordance Rate — "
                  f"{TITLE_COLUMN_RENAME.get(column_name, column_name)} = "
                  f"{label} (N = {len(sub)})")
         plot_overall_bar(perc, rename_dict, title, save_dir)
 
 # ---------------------------------------------------------------------------
-# Overall agreement rates
+# Overall Concordance rates
 # ---------------------------------------------------------------------------
 percentages = calculate_correct_percentages(df, comparison_cols, RENAME_DICT)
 counts      = calculate_correct_counts(df, comparison_cols)
 ci_table    = wilson_ci(df, comparison_cols, RENAME_DICT)
 
-print("\n=== Overall Agreement Rates (95 % Wilson CI) ===")
+print("\n=== Overall Concordance Rates (95 % Wilson CI) ===")
 print(ci_table.to_string(index=False))
 
 ci_table.to_excel(f"{TABLE_DIR}/overall_agreement_ci.xlsx", index=False)
@@ -217,7 +218,7 @@ ci_table.to_excel(f"{TABLE_DIR}/overall_agreement_ci.xlsx", index=False)
 # ---------------------------------------------------------------------------
 # Statistical tests
 # ---------------------------------------------------------------------------
-import itertools
+
 comp_binary_cols = [f"{c}_treatment_concordance" for c in comparison_cols]
 
 results = cochran_and_mcnemar(df, comp_binary_cols)
@@ -274,7 +275,6 @@ s2_df.to_excel(f"{TABLE_DIR}/supp_table_S2_mcnemar_pairwise.xlsx", index=False)
 
 print("\n=== Supplementary Table S2: Pairwise McNemar Tests ===")
 print(s2_df.to_string(index=False))
-input('hey')
 
 # ---------------------------------------------------------------------------
 # Post-hoc McNemar power analysis
@@ -418,7 +418,7 @@ print(ci_by_tumor_df.to_string(index=False))
 # Run visualisations
 # ---------------------------------------------------------------------------
 plot_concordance_heatmap(df, comparison_cols, IMG_DIR)
-plot_overall_bar(percentages, RENAME_DICT, "Overall Agreement Rates", IMG_DIR)
+plot_overall_bar(percentages, RENAME_DICT, "Overall Concordance Rates", IMG_DIR)
 plot_sub_analysis(df, "tumour_type",           comparison_cols, RENAME_DICT, IMG_DIR)
 plot_sub_analysis(df, "presentation",                     comparison_cols, RENAME_DICT, IMG_DIR)
 plot_sub_analysis(df, "tumorboard_primary_treatment", comparison_cols, RENAME_DICT, IMG_DIR)
@@ -642,12 +642,12 @@ print(df.groupby('tumour_type')['treatment_entropy_bits'].mean())
 def _add_table_to_doc(doc: Document, df: pd.DataFrame,
                        column_name: str, comparison_cols: list,
                        rename_dict: dict) -> None:
-    """Append a stratified agreement-rate table to *doc*."""
+    """Append a stratified Concordance-rate table to *doc*."""
     unique_vals   = df[column_name].unique()
     title_label   = TITLE_COLUMN_RENAME.get(column_name, column_name)
     renamed_cols  = [rename_dict.get(c, c) for c in comparison_cols]
 
-    doc.add_paragraph(f"Table: Agreement Rate by {title_label}")
+    doc.add_paragraph(f"Table: Concordance Rate by {title_label}")
 
     table = doc.add_table(rows=1, cols=len(renamed_cols) + 1)
     table.style = "Table Grid"
@@ -680,4 +680,4 @@ _add_table_to_doc(doc, df, "tumorboard_primary_treatment", comparison_cols, RENA
 doc.save(f"{TABLE_DIR}/Analysis_Tables_role.docx")
 print(f"Word tables saved → {TABLE_DIR}/Analysis_Tables_role.docx")
 
-print("\n=== Agreement Analysis Complete ===")
+print("\n=== Concordance Analysis Complete ===")

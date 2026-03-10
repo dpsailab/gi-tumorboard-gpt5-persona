@@ -3,7 +3,7 @@
 
 This repository contains the complete analysis and experimental pipeline accompanying the manuscript:
 
-> **"Role-Based and Ensemble GPT-5 Approaches for Clinical Decision Support in Gastrointestinal Oncology"**
+> **"Do Specialist Personas Improve Clinical Reasoning? GPT-5 Role Prompting and Ensemble Aggregation in Gastrointestinal Tumour Board Decision-Making"**
 > *(Submitted for peer review)*
 
 
@@ -38,7 +38,7 @@ Embedding analyses are used to determine whether different clinical personas ind
 ├── 01_agreement_analysis.py          # Agreement rates, Cochran Q, McNemar, Wilson CIs
 ├── 02_embedding_analysis.py          # Cosine similarity, PCA, UMAP, Jensen–Shannon divergence
 ├── 03_persona_stability_analysis.py  # PSI, CRI, boundary entropy, clinical risk score
-├── 04_advanced_analysis.py           # Confusion matrices, Cohen κ, GEE, correlations
+├── 04_advanced_analysis.py           # Confusion matrices, Cohen κ, correlations
 │
 ├── data/
 │ ├── anonymized_dataset/ # Study dataset (not publicly distributed)

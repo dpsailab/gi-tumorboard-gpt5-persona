@@ -283,19 +283,72 @@ def run_embedding_analysis(df, embedding_dict, title_prefix, save_prefix):
             if sims:
                 sim_matrix.loc[r1, r2] = np.mean(sims)
 
-    print(sim_matrix.round(4))
+    print(sim_matrix.round(4).to_string())
 
     sim_matrix.to_excel(
         f"{TABLE_DIR}/{save_prefix}_similarity_matrix.xlsx"
     )
 
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(sim_matrix.astype(float), annot=True, fmt=".3f",
-                cmap="viridis", vmin=0.85, vmax=1.0)
-    plt.title(f"Mean Pairwise Cosine Similarity — {save_prefix} Role Embeddings")
-    plt.xlabel("Role")
-    plt.ylabel("Role")
-    _save_or_show(f"{IMG_DIR}/{save_prefix}embedding_similarity_heatmap.png")
+    # ---------------------------------------------------------------------------
+    # Rename axes labels for publication
+    # ---------------------------------------------------------------------------
+    ROLE_LABELS = {
+        "Simulated Tumorboard": "Sim. Tumour Board",
+        "Surgeon": "Surgical Oncologist",
+        "Oncologist": "Medical Oncologist",
+        "Radio-Oncologist": "Radiation Oncologist",
+    }
+
+    sim_matrix_plot = sim_matrix.copy()
+    sim_matrix_plot.index = [ROLE_LABELS.get(r, r) for r in sim_matrix_plot.index]
+    sim_matrix_plot.columns = [ROLE_LABELS.get(r, r) for r in sim_matrix_plot.columns]
+
+
+    # ---------------------------------------------------------------------------
+    # Figure title and filename based on save_prefix
+    # ---------------------------------------------------------------------------
+    if "specialist" in save_prefix.lower():
+        fig_title = "Figure 4A — Specialist Persona Prompting (Frameworks 3–5)"
+        fname = "Figure_4A_cosine_similarity_specialist_persona.png"
+    else:
+        fig_title = "Figure 4B — Multi-Expert Deliberation (Framework 2)"
+        fname = "Figure_4B_cosine_similarity_multi_expert.png"
+
+    # ---------------------------------------------------------------------------
+    # Plot
+    # ---------------------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(7, 6))
+
+    mask = np.eye(len(sim_matrix_plot), dtype=bool)
+
+    sns.heatmap(
+        sim_matrix_plot.astype(float),
+        annot=True,
+        fmt=".3f",
+        cmap="RdYlGn",
+        vmin=0.6,
+        vmax=1.0,
+        linewidths=0.5,
+        square=True,
+        mask=mask,
+        ax=ax,
+        annot_kws={"size": 11},
+    )
+
+    # Grey diagonal
+    for i in range(len(sim_matrix_plot)):
+        ax.add_patch(plt.Rectangle((i, i), 1, 1, fill=True, color="lightgrey"))
+        ax.text(i + 0.5, i + 0.5, "1.000", ha="center", va="center",
+                fontsize=10, color="black")
+
+    ax.set_title(fig_title, fontsize=12, pad=20)
+    ax.set_xlabel("Role", fontsize=11)
+    ax.set_ylabel("Role", fontsize=11)
+    plt.xticks(rotation=35, ha="right", fontsize=10)
+    plt.yticks(rotation=0, fontsize=10)
+    plt.tight_layout()
+
+    _save_or_show(f"{IMG_DIR}/{fname}")
 
     # ==================================================
     # 2. Advanced PCA structural analysis (per-role)
@@ -462,7 +515,7 @@ def run_embedding_analysis(df, embedding_dict, title_prefix, save_prefix):
     # 3. Jensen-Shannon divergence
     # ==================================================
 
-    print("\n--- Jensen-Shannon divergence ---")
+    print(f"\n--- Jensen-Shannon {save_prefix} divergence ---")
 
     role_vectors = {r: [] for r in roles}
 
@@ -690,7 +743,7 @@ run_embedding_analysis(
 # PERSONA DRIFT SCORE (Specialist persona vs Multi-expert deliberation)
 # ======================================================
 
-print("\n=== Persona Drift Score ===")
+print(f"\n=== Persona Drift Score ===")
 
 case_rows = []
 
@@ -743,7 +796,7 @@ if len(drift_df) > 0:
         })
     )
 
-    print("\n--- Drift summary per role ---")
+    print(f"\n--- Drift summary per role ---")
     print(role_drift_summary.to_string(index=False))
 
     # ------------------------------------------------------

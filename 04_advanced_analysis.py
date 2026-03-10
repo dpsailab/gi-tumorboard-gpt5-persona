@@ -8,8 +8,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
-from scipy.stats import pointbiserialr, spearmanr
+import itertools
+from scipy.stats import pointbiserialr
 from sklearn.metrics import cohen_kappa_score
 import seaborn as sns
 
@@ -20,6 +20,7 @@ from config import (
     METHOD_TREATMENT_COLS,
     SIGNAL_COLUMNS,
     REFERENCE_TREATMENT_COL,
+    KAPPA_METHODS
 )
 
 # -----------------------------------------------------------
@@ -124,52 +125,76 @@ with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
 print(f"\nAll confusion matrices saved → {output_path}")
 print("Confusion matrices complete.")
 
-# ===========================================================
-# B. Cohen kappa
-# ===========================================================
+# ===========================================================================
+# B. Cohen's kappa - full pairwise matrix
+# ===========================================================================
 
-kappa_rows = []
+labels = list(KAPPA_METHODS.keys())
+cols   = list(KAPPA_METHODS.values())
 
-for role, col in METHOD_TREATMENT_COLS.items():
+# Build matrix
+kappa_matrix = pd.DataFrame(np.nan, index=labels, columns=labels)
 
-    if col not in df.columns:
+for (l1, c1), (l2, c2) in itertools.combinations(zip(labels, cols), 2):
+
+    if c1 not in df.columns or c2 not in df.columns:
         continue
 
-    tb_labels = []
-    role_labels = []
+    mask   = df[c1].notna() & df[c2].notna()
+    y1     = df.loc[mask, c1].astype(str)
+    y2     = df.loc[mask, c2].astype(str)
 
-    for _, row in df.iterrows():
-
-        tb_list = row["tumorboard_treatment"]
-        role_val = row[col]
-
-        if isinstance(tb_list, list) and not pd.isna(role_val):
-
-            if role_val in tb_list:
-                tb_labels.append(role_val)
-                role_labels.append(role_val)
-            else:
-                tb_labels.append("DISAGREE")
-                role_labels.append(role_val)
-
-    if len(tb_labels) > 0:
-        k = cohen_kappa_score(tb_labels, role_labels)
-    else:
+    if len(y1) == 0 or y1.nunique() < 2 or y2.nunique() < 2:
         k = np.nan
+    else:
+        k = cohen_kappa_score(y1, y2)
 
-    kappa_rows.append({
-        "role": role,
-        "kappa": k,
-        "n": len(tb_labels)
-    })
+    kappa_matrix.loc[l1, l2] = round(k, 3)
+    kappa_matrix.loc[l2, l1] = round(k, 3)
 
-kappa_df = pd.DataFrame(kappa_rows)
+# Diagonal = 1
+for l in labels:
+    kappa_matrix.loc[l, l] = 1.000
 
-_print_and_save(
-    kappa_df,
-    f"{TABLE_DIR}/kappa_vs_tumorboard.xlsx",
-    "=== Cohen Kappa Results ==="
+print("\n=== Pairwise Cohen's Kappa Matrix ===")
+print(kappa_matrix.to_string())
+
+kappa_matrix.to_excel(f"{TABLE_DIR}/kappa_pairwise_matrix.xlsx")
+
+# ---------------------------------------------------------------------------
+# Heatmap - rescaled to actual data range
+# ---------------------------------------------------------------------------
+
+matrix_float = kappa_matrix.astype(float)
+vmin = round(matrix_float.values[~np.eye(len(labels), dtype=bool)].min() - 0.05, 2)
+
+fig, ax = plt.subplots(figsize=(10, 8))
+
+sns.heatmap(
+    matrix_float,
+    annot=True,
+    fmt=".3f",
+    cmap="RdYlGn",       # diverging: red=low, green=high
+    vmin=vmin,
+    vmax=1.0,
+    linewidths=0.5,
+    ax=ax,
+    square=True,
+    mask=np.eye(len(labels), dtype=bool),  # hide diagonal
 )
+
+# Draw diagonal separately as grey
+for i in range(len(labels)):
+    ax.add_patch(plt.Rectangle((i, i), 1, 1, fill=True, color='lightgrey'))
+    ax.text(i + 0.5, i + 0.5, "1.000", ha='center', va='center',
+            fontsize=9, color='black')
+
+ax.set_title("Pairwise Cohen's Kappa Matrix", fontsize=13)
+plt.xticks(rotation=45, ha="right")
+plt.yticks(rotation=0)
+plt.tight_layout()
+
+_save_or_show(f"{IMG_DIR}/kappa_pairwise_heatmap.png")
 
 # ===========================================================
 # C. Frequency analysis

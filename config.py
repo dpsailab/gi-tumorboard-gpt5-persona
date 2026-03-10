@@ -141,6 +141,25 @@ SIGNAL_COLUMNS = [
 ]
 
 # ==========================================================
+# Concordance Columns
+# ==========================================================
+
+CONCORDANCE_COLS = {
+    role: _concordance_col(cfg["prefix"])
+    for role, cfg in ROLE_CONFIG.items()
+}
+
+KAPPA_METHODS = {
+    "MDT Reference":             "tumorboard_primary_treatment",
+    "Simulated Tumour Board":    "F1_MDT_simulation_treatment",
+    "Multi-expert Deliberation": "F2_multi_expert_consensus_treatment",
+    "Surgical Oncologist":       "F3_persona_surgeon_treatment",
+    "Medical Oncologist":        "F4_persona_medical_oncologist_treatment",
+    "Radiation Oncologist":      "F5_persona_radiation_oncologist_treatment",
+    "Majority Vote Ensemble":    "F6_majority_vote_treatment",
+}
+
+# ==========================================================
 # Embedding Columns
 # ==========================================================
 
@@ -209,12 +228,12 @@ ROLE_COLORS = {
 }
 
 BAR_COLORS = [
-    "#E63946",
-    "#F4A261",
-    "#E9C46A",
-    "#2A9D8F",
-    "#457B9D",
     "#6A4C93",
+    "#E63946",
+    "#457B9D",
+    "#F4A261",
+    "#2A9D8F",
+    "#E9C46A",
 ]
 
 # ==========================================================
