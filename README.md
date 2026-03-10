@@ -39,7 +39,7 @@ Embedding analyses are used to determine whether different clinical personas ind
 ├── 02_embedding_analysis.py          # Cosine similarity, PCA, UMAP, Jensen–Shannon divergence
 ├── 03_persona_stability_analysis.py  # PSI, CRI, boundary entropy, clinical risk score
 ├── 04_advanced_analysis.py           # Confusion matrices, Cohen κ, correlations
-├── 05_sensitivity_analysis_composite_indices.py           # Sensitivity analysis
+├── 05_sensitivity_analysis_composite_indices.py           # sensitivity analysis, convergent validity, component contribution 
 │
 ├── data/
 │ ├── anonymized_dataset/ # Study dataset (not publicly distributed)
