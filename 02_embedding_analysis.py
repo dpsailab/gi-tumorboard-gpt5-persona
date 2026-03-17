@@ -239,7 +239,6 @@ def plot_persona_pca_space(
     )
 
     plt.suptitle(title, fontsize=16)
-
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
     print(f"----> saved {output_path}")
 
