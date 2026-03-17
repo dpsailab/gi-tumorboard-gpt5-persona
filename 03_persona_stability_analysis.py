@@ -60,6 +60,29 @@ Weight perturbation analysis evaluates robustness of PSI ranking stability.
 Observed rank invariance under ±20% weight perturbations indicates structural
 stability of persona representations.
 
+7. Content Type Distribution (Rainbow Figure)
+--------------------------------
+Stacked bar visualisation of role-specific vs cross-disciplinary content
+distribution per clinical role and prompting condition.
+
+Under ideal role separation each bar would consist of a single colour
+(role-specific content only). The figure illustrates how single-specialty
+prompting produces a heterogeneous "rainbow" mix of content types,
+whereas multi-expert deliberation drives outputs towards the expected
+monochromatic pattern.
+
+Data are sourced from the Combination Analysis (Section 11).
+
+Note on section numbering
+--------------------------------
+The 7 conceptual components above map to 12 numbered sections in the code.
+The discrepancy arises because some components expand into multiple
+implementation steps (e.g. Persona Geometry Metrics spans Sections 2–3;
+PSI spans Sections 5–6; Boundary Control spans Sections 7–8), and
+Section 11 (Combination Analysis) provides the intermediate data
+structure consumed by Section 12 (Rainbow Figure) without representing
+a distinct analytical concept in its own right.
+
 All outputs are written to:
 
     output/persona_stability_analysis/
@@ -1248,3 +1271,121 @@ for fw_name in FRAMEWORK_CONFIGS:
     )
 
 print("\n=== Persona Stability Analysis Complete ===")
+
+
+# ===========================================================================
+# 12. Content Type Distribution — "Rainbow" Stacked Bar Figure
+# ===========================================================================
+#
+# Visualises the distribution of role-specific vs cross-disciplinary content
+# per clinical role under each prompting condition.
+#
+# Under ideal role separation each bar should consist of a single colour
+# (role-specific content only).  The figure exposes how single-specialty
+# prompting produces a heterogeneous "rainbow" mix, whereas multi-expert
+# deliberation drives outputs towards the expected monochromatic pattern.
+#
+# Data are taken directly from combo_df produced in Section 11 above.
+# Adjust N_PER_ROLE if the per-role sample size differs from 100.
+# ---------------------------------------------------------------------------
+
+print("\n=== Content Type Distribution (Rainbow Figure) ===")
+
+_ROLE_ORDER = [r for r in ROLES if r != "Simulated Tumorboard"]
+_CATEGORY_ORDER = ["Role-specific only", "Both", "Cross-disciplinary only", "Neither"]
+
+# Palette consistent with the rest of the module (extended to four categories)
+_CATEGORY_COLORS = [
+    "#2E4057",  # dark navy   — role-specific only
+    "#F6AE2D",  # amber       — both content types
+    "#E53935",  # red         — cross-disciplinary only
+    "#BDBDBD",  # light grey  — neither
+]
+
+_N_PER_ROLE = 100
+
+_FW_DISPLAY = {
+    "Specialist Persona": "A  Specialist Persona Prompting",
+    "Multi-Expert": "B  Multi-Expert Deliberation",
+}
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
+
+for ax, (fw_key, fw_title) in zip(axes, _FW_DISPLAY.items()):
+
+    fw_data = combo_df[combo_df["framework"] == fw_key]
+
+    # Build (n_categories x n_roles) matrix of case counts
+    matrix = np.zeros((len(_CATEGORY_ORDER), len(_ROLE_ORDER)), dtype=float)
+
+    for ci, cat in enumerate(_CATEGORY_ORDER):
+        for ri, role in enumerate(_ROLE_ORDER):
+            subset = fw_data[(fw_data["category"] == cat) & (fw_data["role"] == role)]
+            if len(subset) > 0:
+                matrix[ci, ri] = float(subset["n"].values[0])
+
+    # Convert to percentages
+    matrix_pct = matrix / _N_PER_ROLE * 100
+
+    bottom = np.zeros(len(_ROLE_ORDER))
+    role_labels = [r.replace(" ", "\n") for r in _ROLE_ORDER]
+
+    for ci, (cat, color) in enumerate(zip(_CATEGORY_ORDER, _CATEGORY_COLORS)):
+        vals = matrix_pct[ci]
+        ax.bar(
+            role_labels, vals,
+            bottom=bottom,
+            color=color,
+            edgecolor="white",
+            linewidth=0.5,
+            label=cat,
+            width=0.55,
+        )
+        # Inline percentage labels (only if segment is large enough to be legible)
+        for ri, v in enumerate(vals):
+            if v >= 5:
+                ax.text(
+                    ri, bottom[ri] + v / 2,
+                    f"{v:.0f}%",
+                    ha="center", va="center",
+                    fontsize=8.5, color="white", fontweight="bold",
+                )
+        bottom += vals
+
+    ax.set_title(fw_title, fontsize=11, fontweight="bold", loc="left")
+    ax.set_ylabel("Cases (%)", fontsize=10)
+    ax.set_ylim(0, 110)
+    ax.set_yticks(range(0, 101, 20))
+    ax.spines[["top", "right"]].set_visible(False)
+
+# Shared legend below both panels
+handles, labels = axes[0].get_legend_handles_labels()
+if axes[0].legend_:
+    axes[0].legend_.remove()
+if axes[1].legend_:
+    axes[1].legend_.remove()
+
+fig.legend(
+    handles, labels,
+    loc="lower center",
+    ncol=2,
+    fontsize=9,
+    frameon=False,
+    bbox_to_anchor=(0.5, -0.05),
+    title="Content type",
+    title_fontsize=9,
+)
+
+fig.suptitle(
+    "Content type distribution per clinical role",
+    fontsize=11,
+    y=1.02,
+)
+
+plt.tight_layout()
+plt.subplots_adjust(bottom=0.18)
+
+rainbow_path = f"{IMG_DIR}/content_type_distribution_rainbow.png"
+_save_or_show(rainbow_path)
+
+print("Content type distribution figure saved.")

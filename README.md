@@ -3,7 +3,7 @@
 
 This repository contains the complete analysis and experimental pipeline accompanying the manuscript:
 
-> **"Do Specialist Personas Improve Clinical Reasoning? GPT-5 Role Prompting and Ensemble Aggregation in Gastrointestinal Tumour Board Decision-Making"**
+> **"Role Prompting Modulates Linguistic Style but Not Clinical Decision Structure in GPT-5-Based Gastrointestinal Tumour Board Simulation"**
 > *(Submitted for peer review)*
 
 
