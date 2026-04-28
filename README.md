@@ -139,10 +139,12 @@ Place the anonymized dataset in the repository root (already in folder data).
 Each script is self-contained and can be run independently, but the standard analysis order is:
 
 ```bash
-python 01_agreement_analysis.py      # ~1 min
-python 02_embedding_analysis.py      # ~2 min
-python 03_persona_stability_analysis.py  # ~2 min
-python 04_advanced_analysis.py       # ~2 min
+python 00_demographics.py               # ~1 min
+python 01_agreement_analysis.py         # ~1 min
+python 02_embedding_analysis.py         # ~2 min
+python 03_persona_stability_analysis.py # ~2 min
+python 04_advanced_analysis.py          # ~2 min
+python 05_sensitivity_analysis_composite_indices.py  # ~1 min
 ```
 ---
 
