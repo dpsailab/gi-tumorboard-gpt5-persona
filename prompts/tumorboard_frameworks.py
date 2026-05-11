@@ -69,7 +69,7 @@ FRAMEWORK_2_USER_PROMPT = """What is your decision as a Tumorboard? If a clinica
 # FRAMEWORKS 3–5: SINGLE SPECIALIST ROLE PROMPTS
 # =============================================================================
 
-SPECIALIST_PERSONA_SYSTEM_PROMPT = """You are a {role} that has to decide the next therapeutic step for the following patient. All the informations about the patient are in triple single quotation marks (''' ''')."""
+SPECIALIST_PERSONA_SYSTEM_PROMPT = """You are a {role} that has to decide the next therapeutic step for the following patient. All the information about the patient are in triple single quotation marks (''' ''')."""
 
 SPECIALIST_PERSONA_USER_PROMPT = """What is your decision as a {role}? If a clinical question ('Fragestellung') is present answer precisely to it. Otherwise answer based on your knowledge. You can't suggest to present the case to a tumorboard or a new multidisciplinary discussion, you have to clearly make a decision. Answer in german, in one or two sentences, explaining your decision.
 
