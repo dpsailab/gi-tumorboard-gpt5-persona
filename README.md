@@ -47,8 +47,8 @@ Embedding analyses are used to determine whether different clinical personas ind
 │
 ├── prompts/                          # Prompt engineering experimentation module
 │ ├── openai_client.py
-│ ├── prompt_templates.py
 │ ├── run_framework_experiment.py
+│ ├── tumorboard_frameworks.py
 │ └── evaluation.md
 │
 ├── output/                           # outputs created at runtime
@@ -119,16 +119,6 @@ pip install -r requirements.txt
 ```
 
 
-
-## Running the Analyses
-
-### 1. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-
 ### 2. Dataset Placement
 
 Place the anonymized dataset in the repository root (already in folder data).
@@ -153,9 +143,13 @@ python 05_sensitivity_analysis_composite_indices.py  # ~1 min
 ### Agreement Evaluation
 
 - Cochran’s Q test  
-- McNemar pairwise testing  
-- Holm–Bonferroni correction  
+- McNemar pairwise testing with Bonferroni correction 
 - Wilson confidence intervals  
+
+### Correlation Analysis
+ 
+- Point-biserial correlations with Bonferroni correction (6 comparisons, corrected α = 0.0083)
+
 
 ### Embedding Space Analysis
 
@@ -226,8 +220,9 @@ Generated outputs include:
 
 ### Agreement Analysis
 
-- Treatment concordance statistics  
-- Inter-method reliability tests  
+- Treatment concordance statistics
+- Pairwise McNemar tests with Bonferroni-corrected p-values
+- Post-hoc power analysis  
 
 ### Embedding Analysis
 
