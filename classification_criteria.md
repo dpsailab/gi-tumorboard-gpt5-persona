@@ -1,4 +1,4 @@
-# Annotation Guidelines for Role Authenticity and Treatment Classification
+# Annotation Guidelines for Treatment Classification and Role Authenticity
 
 This document describes the annotation procedures used to evaluate GPT-5 outputs across
 all experimental frameworks, covering three dimensions: (1) treatment category classification,
@@ -37,12 +37,6 @@ of nine mutually exclusive therapeutic categories.
 - **Multistep concordance:** Concordance was considered if the LLM matched at least the first
   planned therapeutic step.
 
-### Inter-Rater Reliability
-
-Inter-rater reliability for the nine-category therapeutic classification was assessed between
-two board-certified reviewers across all 500 rated responses (100 cases × 5 frameworks).
-Observed agreement: 93.6% (468/500); Cohen's κ = 0.92, indicating almost perfect agreement.
-Residual disagreements were resolved through discussion until consensus was reached.
 
 ---
 
@@ -53,11 +47,11 @@ for the presence of at least one specialty-characteristic element.
 
 ### Criteria by Role
 
-| Role | Content Classified as Domain-Specific |
-|------|--------------------------------------|
-| **Surgical Oncologist** | Discussion of resectability criteria, operative technique, surgical approach, or perioperative considerations (e.g., anastomotic technique, lymphadenectomy extent, nutritional access). |
+| Role | Content Classified as Domain-Specific                                                                                                                                  |
+|------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Surgical Oncologist** | Discussion of resectability criteria, operative technique, surgical approach, or perioperative considerations (e.g., anastomotic technique, lymphadenectomy extent...). |
 | **Medical Oncologist** | Reference to systemic therapy regimens, chemotherapy sequencing, performance status evaluation, biomarker-driven treatment selection, or internal medicine management. |
-| **Radiation Oncologist** | Radiation-specific content including dose prescription, fractionation schedule, target volume definition, or normal tissue constraints. |
+| **Radiation Oncologist** | Radiation-specific content including dose prescription, fractionation schedule, target volume definition, or normal tissue constraints.                                |
 
 ### Annotation Decision
 
@@ -104,11 +98,6 @@ The former constitutes a boundary violation; the latter does not.
 - **No violation (0):** The output remains within the assigned specialty's scope, or
   integrates interdisciplinary context appropriately.
 
-### Inter-Rater Reliability
-
-Two board-certified clinicians independently annotated all role-prompted outputs (n = 300)
-using the criteria above. Complete inter-rater agreement was observed across all cases,
-reflecting the unambiguous nature of the pre-specified operational definitions.
 
 ---
 
@@ -186,19 +175,3 @@ a medical oncology decision.
 **Classification:** Boundary violation ✓
 **Rationale:** The medical oncologist specifies radiation dose (50.4–60 Gy),
 fractionation, and target volumes — decisions within radiation oncology's domain.
-
----
-
-## 5. Annotation Workflow
-
-1. Both annotators independently reviewed each LLM output in randomised order.
-2. Annotations were performed in dedicated sessions of approximately 45–60 minutes
-   for treatment classification (100 cases per session, with breaks to maintain
-   concentration) and approximately 20–30 minutes for role-authenticity and
-   boundary violation annotation.
-3. After independent annotation, responses were compared. For treatment classification,
-   residual disagreements (6.4% of cases) were resolved through structured discussion.
-   For role-authenticity and boundary violation annotation, complete agreement was
-   observed across all cases without requiring adjudication.
-4. Final classifications were entered into the structured dataset
-   (LLM_MDT_dataset_repository.csv).
