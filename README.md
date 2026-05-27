@@ -49,7 +49,7 @@ Embedding analyses are used to determine whether different clinical personas ind
 │ ├── openai_client.py
 │ ├── run_framework_experiment.py
 │ ├── tumorboard_frameworks.py
-│ └── evaluation.md
+│ └── annotation.md                   # Annotation guidelines: treatment classification, domain-specific, content detection, boundary violation criteria, IAA, examples
 │
 ├── output/                           # outputs created at runtime
 │
