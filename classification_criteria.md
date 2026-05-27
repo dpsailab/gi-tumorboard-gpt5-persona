@@ -37,8 +37,29 @@ of nine mutually exclusive therapeutic categories.
 - **Multistep concordance:** Concordance was considered if the LLM matched at least the first
   planned therapeutic step.
 
-
 ---
+
+### Examples of Classification
+ 
+The table below provides illustrative examples of MDT recommendations and their corresponding
+outcome classification. All examples were originally formulated in German and translated into
+English for clarity and consistency.
+ 
+| MDT Recommendation (English translation) | Assigned Category |
+|-----------------------------------------|------------------|
+| Due to advanced age, significant cardiovascular comorbidities, and diffuse signet-ring cell histology, the board recommends a **strictly palliative approach** with retention of the antral stent and endoscopic surveillance. Surgery and systemic tumour therapy are not recommended. **Symptom-oriented supportive care** (PPI, antiemetics, pain management, nutritional counselling, enteral/parenteral support if needed) and endoscopic re-intervention in case of stent dysfunction are advised; palliative radiotherapy only in case of bleeding or pain. | **Best Supportive Care** |
+| The board currently recommends no primary surgery, but **histological confirmation by prompt re-endoscopy with multiple deep biopsies (± EUS-guided FNA of suspicious lymph nodes) and complete staging**, including diagnostic laparoscopy in the presence of free fluid. After confirmation of malignancy without distant metastases and cardiopulmonary optimisation, curative distal gastrectomy may be considered. Neoadjuvant chemotherapy is not recommended at this stage due to decompensated heart failure. | **Further Diagnostic Procedures** |
+| The board recommends performing an **endoscopic full-thickness resection**. This decision is based on the confirmed diagnosis of a gastric neuroendocrine tumour G2 with a Ki-67 index of 7.2%, absence of distant metastases on PET/CT, and suspicion of residual local disease. Surgical wedge resection is not required given the tumour location and the current clinical context. | **Endoscopic Intervention** |
+| **No further adjuvant therapy is recommended**, as the rectal cancer is staged as UICC I (pT1 cM0 L0 V0 Pn0 R0, G2) after R0 resection, and adjuvant treatment is not indicated according to guidelines. However, endoscopic **follow-up** after six months is recommended to exclude recurrence. | **Active Surveillance / Follow-up** |
+| The board recommends **definitive radiochemotherapy** of the proximal oesophagus with 50–50.4 Gy and concurrent weekly carboplatin/paclitaxel (CROSS-oriented), without neoadjuvant therapy. A PET-CT for final staging and radiation planning should be performed before treatment initiation, while continuing PEG-based nutritional support. | **Multimodal Therapy** |
+| The board recommends **neoadjuvant chemotherapy followed by surgical resection**. Given the deep tumour infiltration (T2–3) and positive lymph node findings (uN+), purely endoscopic therapy is insufficient. Neoadjuvant chemotherapy is intended to reduce tumour burden and decrease the risk of local and systemic metastases prior to curative resection. | **Multistep Therapy** |
+| The board recommends **primary curative surgical resection** (pylorus-preserving pancreaticoduodenectomy) for a resectable pancreatic head lesion without vascular invasion or distant metastases. Neoadjuvant therapy is not indicated. | **Surgery** |
+| The board recommends continuing **systemic therapy** (FOLFOX plus bevacizumab) and re-evaluation in three months, as the patient is responding to the current treatment and surgical resection is not a priority at this time due to the presence of metastatic disease. | **Systemic Therapy** |
+| The board recommends **radiofrequency ablation (RFA)** of the remaining lesion in liver segment II, as this technique represents an effective and minimally invasive option for small tumours (<3 cm) located near vessels, particularly in patients with good performance status and no major vascular invasion or extrahepatic metastases. | **Localized Therapy** |
+ 
+---
+ 
+
 
 ## 2. Domain-Specific Content Detection
 
