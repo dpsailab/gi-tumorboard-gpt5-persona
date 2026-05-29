@@ -47,9 +47,9 @@ Embedding analyses are used to determine whether different clinical personas ind
 │
 ├── prompts/                          # Prompt engineering experimentation module
 │ ├── openai_client.py
-│ ├── prompt_templates.py
 │ ├── run_framework_experiment.py
-│ └── evaluation.md
+│ ├── tumorboard_frameworks.py
+│ └── annotation.md                   # Annotation guidelines: treatment classification, domain-specific, content detection, boundary violation criteria, IAA, examples
 │
 ├── output/                           # outputs created at runtime
 │
@@ -119,16 +119,6 @@ pip install -r requirements.txt
 ```
 
 
-
-## Running the Analyses
-
-### 1. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-
 ### 2. Dataset Placement
 
 Place the anonymized dataset in the repository root (already in folder data).
@@ -139,10 +129,12 @@ Place the anonymized dataset in the repository root (already in folder data).
 Each script is self-contained and can be run independently, but the standard analysis order is:
 
 ```bash
-python 01_agreement_analysis.py      # ~1 min
-python 02_embedding_analysis.py      # ~2 min
-python 03_persona_stability_analysis.py  # ~2 min
-python 04_advanced_analysis.py       # ~2 min
+python 00_demographics.py               # ~1 min
+python 01_agreement_analysis.py         # ~1 min
+python 02_embedding_analysis.py         # ~2 min
+python 03_persona_stability_analysis.py # ~2 min
+python 04_advanced_analysis.py          # ~2 min
+python 05_sensitivity_analysis_composite_indices.py  # ~1 min
 ```
 ---
 
@@ -151,9 +143,13 @@ python 04_advanced_analysis.py       # ~2 min
 ### Agreement Evaluation
 
 - Cochran’s Q test  
-- McNemar pairwise testing  
-- Holm–Bonferroni correction  
+- McNemar pairwise testing with Bonferroni correction 
 - Wilson confidence intervals  
+
+### Correlation Analysis
+ 
+- Point-biserial correlations with Bonferroni correction (6 comparisons, corrected α = 0.0083)
+
 
 ### Embedding Space Analysis
 
@@ -224,8 +220,9 @@ Generated outputs include:
 
 ### Agreement Analysis
 
-- Treatment concordance statistics  
-- Inter-method reliability tests  
+- Treatment concordance statistics
+- Pairwise McNemar tests with Bonferroni-corrected p-values
+- Post-hoc power analysis  
 
 ### Embedding Analysis
 
