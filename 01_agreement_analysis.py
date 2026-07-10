@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from docx import Document
-from scipy.stats import entropy
+from scipy.stats import entropy, shapiro, levene
 
 from config import (
     BAR_COLORS,
@@ -633,6 +633,13 @@ df['treatment_entropy_bits'] = df.apply(shannon_entropy_row, axis=1)
 print(df['treatment_entropy_bits'].describe())
 print(df.groupby('tumour_type')['treatment_entropy_bits'].mean())
 
+# --- Distributional assumption checks for entropy (justify descriptive-only reporting) ---
+_ent = df['treatment_entropy_bits'].dropna().values
+W_sw, p_sw = shapiro(_ent)
+print(f"Entropy Shapiro-Wilk: W={W_sw:.3f}, p={p_sw:.2e}")
+_grp = [g['treatment_entropy_bits'].dropna().values for _, g in df.groupby('tumour_type')]
+W_lev, p_lev = levene(*_grp)
+print(f"Entropy Levene (across tumour types): W={W_lev:.3f}, p={p_lev:.2e}")
 
 
 # ===========================================================================

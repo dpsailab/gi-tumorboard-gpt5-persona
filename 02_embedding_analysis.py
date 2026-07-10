@@ -40,7 +40,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from scipy.spatial.distance import cdist, jensenshannon
-from scipy.stats import kruskal
+from scipy.stats import kruskal, shapiro, levene
 from sklearn.decomposition import PCA
 
 from config import (
@@ -653,6 +653,22 @@ def run_embedding_analysis(df, embedding_dict, title_prefix, save_prefix):
                     })
 
         stat_df = pd.DataFrame(rows)
+
+        # --------------------------------------------------
+        # Distributional assumption checks (justify non-parametric tests)
+        # --------------------------------------------------
+        print("\n--- Assumption checks (normality / homoscedasticity) ---")
+        for pc in ["pc1", "pc2"]:
+            W_sw, p_sw = shapiro(stat_df[pc].values)
+            print(f"{pc.upper()} Shapiro-Wilk (pooled): W={W_sw:.3f}, p={p_sw:.2e}")
+            groups_lev = [
+                stat_df[stat_df["role"] == r][pc].values
+                for r in roles if len(stat_df[stat_df["role"] == r]) > 5
+            ]
+            if len(groups_lev) >= 2:
+                W_lev, p_lev = levene(*groups_lev)
+                print(f"{pc.upper()} Levene (across roles): W={W_lev:.3f}, p={p_lev:.2e}")
+
 
         # --------------------------------------------------
         # Kruskal-Wallis on PC1 and PC2
