@@ -291,10 +291,49 @@ See `LICENSE`.
 
 If you use this work, please cite:
 
-> Citation will be added after peer review acceptance.
+> Stifini, D., Della Penna, A., Mihaljevic, A.L. et al.
+> Role prompting modulates linguistic style but not clinical decision structure in GPT-5 tumour board simulation.
+> npj Digit. Med. 9, 626 (2026).
+> https://doi.org/10.1038/s41746-026-03069-4
 
 ---
 
 ## Contact
 
 Corresponding author contact details will be provided upon publication.
+
+
+## Post-publication analyses (Matters Arising)
+
+After publication in *npj Digital Medicine* (https://doi.org/10.1038/s41746-026-03069-4), two Matters Arising were submitted on the article. The analyses below were run for the authors' Replies. They add to the published pipeline and do not change any published script or result.
+
+```
+├── 06_caselevel_crossdisciplinary.py  # Multi-expert deliberation: case-level re-analysis of cross-disciplinary content vs consensus concordance (100 independent cases instead of 300 pooled paths)
+├── 07_role_boundary_structure.py      # Specialist personas: boundary violations stratified by whether the persona's own recommendation falls within or outside its specialty
+├── 08_retest_analysis.py              # Second independent run of the three personas: concordance run 1 vs run 2, test-retest kappa, intra- vs inter-persona agreement, equivalence intervals (Newcombe, 90% CI), tumour subgroups
+├── 09_retest_extra.py                 # Second run: overlap of changed cases, concordance by MDT treatment domain and tumour type, recommendation profiles, discordant recommendations by persona
+│
+└── data/
+    └── LLM_MDT_persona_retest_run2.csv  # Second run (Frameworks 3–5): GPT-5 outputs and treatment categories for all 100 cases
+```
+
+**Second run.** The three specialist-persona prompts (Frameworks 3–5) were run a second time on all 100 cases with the same model snapshot (`gpt-5-2025-08-07`) and prompts as the original study. Two board-certified raters assigned the nine treatment categories blind to the first-run categories and to the MDT decision, following `prompts/annotation.md`. Columns:
+
+| Column | Content |
+| --- | --- |
+| `case_nr` | Case identifier, identical to `data/LLM_MDT_dataset_repository.csv` |
+| `F3_persona_surgeon_run2` | Second-run output, surgical oncologist persona |
+| `F4_persona_medical_oncologist_run2` | Second-run output, medical oncologist persona |
+| `F5_persona_radiation_oncologist_run2` | Second-run output, radiation oncologist persona |
+| `*_run2_treatment` | Treatment category of each output (same labels as the original dataset) |
+
+Run order, from the repository root:
+
+```bash
+python 06_caselevel_crossdisciplinary.py
+python 07_role_boundary_structure.py
+python 08_retest_analysis.py   # -> output/retest_results.xlsx
+python 09_retest_extra.py      # -> output/retest_extra.xlsx
+```
+
+`08_retest_analysis.py` first recomputes the published run-1 concordance (84 / 84 / 78%) as a check that the two files are aligned.
