@@ -16,6 +16,7 @@ Pre-specified questions (fixed before looking at the run-2 results)
     D. Equivalence between roles: paired difference in concordance with
        Newcombe (method 10) 90% CI, flagged against +/-5, 7.5, 10, 15 points,
        for run 1, run 2 and the per-case mean of both runs.
+    D2. Same intervals for all six frameworks in run 1 (published concordance).
     E. Tumour-type subgroups: concordance run 1 / run 2 and test-retest agreement.
 
 Output: retest_results.xlsx (one sheet per block) + printed summary.
@@ -289,12 +290,11 @@ for x, y in itertools.combinations(FRAMEWORKS_RUN1, 2):
     diff, lo, hi, b, c = newcombe_paired(repo[FRAMEWORKS_RUN1[x]].astype(int),
                                          repo[FRAMEWORKS_RUN1[y]].astype(int))
     d2row.append({"pair": f"{x} vs {y}",
-                  f"{x[:3]}_%": None,
                   "diff_pp": round(100 * diff, 1),
                   "90%CI_low": round(100 * lo, 1), "90%CI_high": round(100 * hi, 1),
                   "discordant_b": b, "discordant_c": c,
                   **margin_flags(100 * lo, 100 * hi)})
-D2 = pd.DataFrame(d2row).drop(columns=[c for c in pd.DataFrame(d2row).columns if c.endswith("_%")])
+D2 = pd.DataFrame(d2row)
 
 # --------------------------------------------------------------------------
 # E. Tumour-type subgroups
@@ -327,6 +327,7 @@ with pd.ExcelWriter(OUT_FILE) as w:
     C_summary.to_excel(w, sheet_name="C_intra_vs_inter", index=False)
     U.to_excel(w, sheet_name="C_unanimity", index=False)
     D.to_excel(w, sheet_name="D_equivalence", index=False)
+    D2.to_excel(w, sheet_name="D2_frameworks_run1", index=False)
     E.to_excel(w, sheet_name="E_tumour_by_role", index=False)
     E_tumour.to_excel(w, sheet_name="E_tumour_summary")
     df.drop(columns=[REF_COL]).to_excel(w, sheet_name="case_level", index=False)
@@ -338,6 +339,7 @@ for title, tab in [("A. Concordance with MDT, run 1 vs run 2", A),
                    ("C. Intra- vs inter-role kappa (criterion < 0.10)", C_summary),
                    ("C. Unanimity of the three roles", U),
                    ("D. Equivalence between roles (90% CI, pp)", D),
+                   ("D2. Equivalence among all six frameworks, run 1 (90% CI, pp)", D2),
                    ("E. Tumour types, least to most stable", E_tumour)]:
     print(f"\n=== {title} ===")
     print(tab.to_string(index=title.startswith("E.")))
