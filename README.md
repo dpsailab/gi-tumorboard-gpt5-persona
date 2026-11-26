@@ -300,7 +300,7 @@ If you use this work, please cite:
 
 ## Contact
 
-Corresponding author contact details will be provided upon publication.
+Ivan Capobianco, University Hospital Tübingen — ivan.capobianco@med.uni-tuebingen.de
 
 
 ## Post-publication analyses (Matters Arising)

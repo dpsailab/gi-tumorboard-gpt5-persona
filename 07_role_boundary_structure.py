@@ -41,9 +41,9 @@ from config import (
 # Home category per role, matched case-insensitively by substring.
 # Verify the resolved mapping printed below against the real labels.
 HOME_PATTERNS = {
-    "Surgeon": "surg",
-    "Oncologist": "systemic",
-    "Radio-Oncologist": "local",   # real label is "Local Therapy"
+    "Surgeon": ["surg"],
+    "Oncologist": ["systemic"],
+    "Radio-Oncologist": ["local", "multimodal"],  # local therapy or chemoradiation
 }
 SPECIALIST_ROLES = ["Surgeon", "Oncologist", "Radio-Oncologist"]
 
@@ -59,7 +59,7 @@ print("=== Resolved home categories (verify these) ===")
 for role in SPECIALIST_ROLES:
     tcol = METHOD_TREATMENT_COLS[role]
     hits = [v for v in pd.Series(df[tcol]).dropna().unique()
-            if HOME_PATTERNS[role].lower() in str(v).lower()]
+            if any(p in str(v).lower() for p in HOME_PATTERNS[role])]
     print(f"{role:16s} pattern '{HOME_PATTERNS[role]}' -> {hits}")
 print()
 
@@ -79,7 +79,8 @@ for role in SPECIALIST_ROLES:
     bnd = _num(df[bcol])
     con = _num(df[ccol])
 
-    is_home = treat.str.lower().apply(lambda x: HOME_PATTERNS[role].lower() in x)
+    is_home = treat.str.lower().apply(
+        lambda x: any(p in x for p in HOME_PATTERNS[role]))
     n = len(df)
     n_home = int(is_home.sum())
     n_out = int((~is_home).sum())
