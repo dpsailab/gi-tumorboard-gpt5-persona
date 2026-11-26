@@ -274,6 +274,29 @@ for x, y in itertools.combinations(ROLES, 2):
 D = pd.DataFrame(drow)
 
 # --------------------------------------------------------------------------
+# D2. Equivalence among all six frameworks, run 1 (published concordance)
+# --------------------------------------------------------------------------
+FRAMEWORKS_RUN1 = {
+    "Simulated tumour board": "F1_MDT_simulation_treatment_concordance",
+    "Multi-expert deliberation": "F2_multi_expert_consensus_treatment_concordance",
+    "Surgeon": "F3_persona_surgeon_treatment_concordance",
+    "Medical oncologist": "F4_persona_medical_oncologist_treatment_concordance",
+    "Radiation oncologist": "F5_persona_radiation_oncologist_treatment_concordance",
+    "Majority vote": "F6_majority_vote_treatment_concordance",
+}
+d2row = []
+for x, y in itertools.combinations(FRAMEWORKS_RUN1, 2):
+    diff, lo, hi, b, c = newcombe_paired(repo[FRAMEWORKS_RUN1[x]].astype(int),
+                                         repo[FRAMEWORKS_RUN1[y]].astype(int))
+    d2row.append({"pair": f"{x} vs {y}",
+                  f"{x[:3]}_%": None,
+                  "diff_pp": round(100 * diff, 1),
+                  "90%CI_low": round(100 * lo, 1), "90%CI_high": round(100 * hi, 1),
+                  "discordant_b": b, "discordant_c": c,
+                  **margin_flags(100 * lo, 100 * hi)})
+D2 = pd.DataFrame(d2row).drop(columns=[c for c in pd.DataFrame(d2row).columns if c.endswith("_%")])
+
+# --------------------------------------------------------------------------
 # E. Tumour-type subgroups
 # --------------------------------------------------------------------------
 erow = []

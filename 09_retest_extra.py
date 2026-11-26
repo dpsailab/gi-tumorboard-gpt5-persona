@@ -5,7 +5,7 @@ Follow-up checks on the test-retest data (same inputs as 08_retest_analysis.py).
 
 1. Which cases changed category between runs, per role, and how much the
    three roles' changed cases overlap (same unstable cases, or different ones?)
-2. Concordance by treatment domain ("Bereich") of the MDT decision, per role
+2. Concordance by treatment domain of the MDT decision, per role
    and per run, plus majority vote. Does each persona do best in its own domain?
 3. Concordance by tumour type, per role and per run, plus majority vote.
 
