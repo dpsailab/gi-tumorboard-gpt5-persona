@@ -4,7 +4,7 @@
 This repository contains the complete analysis and experimental pipeline accompanying the manuscript:
 
 > **"Role Prompting Modulates Linguistic Style but Not Clinical Decision Structure in GPT-5 Tumour Board Simulation"**
-> *(Submitted for peer review)*
+> *Published in npj Digital Medicine 9, 626 (2026). https://doi.org/10.1038/s41746-026-03069-4*
 
 
 ---
